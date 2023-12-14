@@ -52,6 +52,8 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 
+#include <any>
+
 namespace mlir {
 namespace rock {
 #define GEN_PASS_DEF_ROCKGRIDWISEGEMMTOBLOCKWISEPASS
@@ -1133,10 +1135,12 @@ struct GridwiseAttentionAccelRewritePattern
     }
   }
 
-  RockAccelTuningParamAttrInterface
-  deriveGemm1TuningParams(PatternRewriter &rewriter,
-                          RockAccelTuningParamAttrInterface gemm0TuningParams,
-                          GemmFeatures features) const {
+  RockAccelTuningParamAttrInterface deriveGemm1TuningParams(
+      PatternRewriter &rewriter,
+      RockAccelTuningParamAttrInterface rawGemm0TuningParams,
+      GemmFeatures features) const {
+    auto gemm0TuningParams =
+        rawGemm0TuningParams.dyn_cast<XdlopsGemmParamsAttr>();
     int64_t gemm1KPack = gemm0TuningParams.getKpack();
     return rewriter.getAttr<XdlopsGemmParamsAttr>(
         /*gemmKpackPerBlock=*/gemm0TuningParams.getNPerBlock() / gemm1KPack,
@@ -1443,7 +1447,9 @@ struct GridwiseAttentionAccelRewritePattern
     int64_t gemm1M = outShape[1];
     int64_t gemm1N = outShape[2];
 
-    RockAccelTuningParamAttrInterface gemm0TuningParams = op.getParams();
+    RockAccelTuningParamAttrInterface rawGemm0TuningParams = op.getParams();
+    auto gemm0TuningParams =
+        rawGemm0TuningParams.dyn_cast<XdlopsGemmParamsAttr>();
     int64_t gemm0kpack = gemm0TuningParams.getKpack();
     int64_t gemm0KpacksPerBlock = gemm0TuningParams.getKpackPerBlock();
     int64_t gemm0MPerBlock = gemm0TuningParams.getMPerBlock();
@@ -1959,15 +1965,26 @@ struct GridwiseGemmAccelRewritePattern
   LogicalResult matchAndRewrite(GridwiseGemmAccelOp op,
                                 PatternRewriter &b) const override {
     Location loc = op.getLoc();
+    bool isWmma =
+        rock::bitEnumContainsAll(op.getFeatures(), GemmFeatures::wmma);
 
-    // Obtain data types of inputs.
     auto elementTypeA = op.getA().getType().getElementType();
     auto elementTypeB = op.getB().getType().getElementType();
     auto destType = op.getC().getType().getElementType();
 
-    // Prepare some useful constants.
+    llvm::outs() << "**DEBUG-typeA: " << elementTypeA << "\n";
+    llvm::outs() << "**DEBUG-typeDest: " << destType << "\n";
+
     Value matA = op.getA();
     Value matB = op.getB();
+
+    auto zeroConstantOp = b.create<ConstantIndexOp>(loc, 0);
+
+    auto accelEmitterPtr2 =
+        accel::AccelEmitter::select(op.getFeatures(), elementTypeA,
+                                    elementTypeB, op.getArch(), op.getParams());
+
+    rock::accel::AccelEmitterParams params1 = accelEmitterPtr2->getParams();
 
     // Obtain critical matrix dimensions.
     ArrayRef<int64_t> aShape, bShape, cShape;
@@ -1980,40 +1997,31 @@ struct GridwiseGemmAccelRewritePattern
     int64_t M = aShape[2];
     int64_t N = bShape[2];
 
-    // Obtain critical tuning parameters.
     StringRef arch = op.getArch();
+
+    int64_t kpack = params1.kpack;
+    int64_t mPerBlock = params1.mPerBlock;
+    int64_t nPerBlock = params1.nPerBlock;
+    int64_t kpacksPerBlock = params1.kpacksPerBlock;
+    int64_t kBasePerThread = params1.kBasePerThread;
     uint32_t blockSize = op.getBlockSize();
-    uint32_t gridSize = op.getGridSize();
-    RockAccelTuningParamAttrInterface tuningParams = op.getParams();
-    int64_t kpack = tuningParams.getKpack();
-    // TODO: kPerBlock, as defined in parameter selection etc,
-    // is in units of kPack, not individual k. This should be changed
-    // at some future point, but it'll be worked around for now.
-    int64_t kpacksPerBlock = tuningParams.getKpackPerBlock();
-    int64_t mPerBlock = tuningParams.getMPerBlock();
-    int64_t nPerBlock = tuningParams.getNPerBlock();
+    bool forceUnroll = params1.forceUnroll;
+
+    bool useIndexDiffs = true;
+    bool useIndexDif = params1.useIndexDiffs;
+    bool non_useIndexDif = params1.non_useIndexDiffs; //??? check for var name?
+    int64_t nOutputVectors = params1.nOutputVectors;
+
     int64_t mBlocks = M / mPerBlock;
     int64_t nBlocks = N / nPerBlock;
-    bool forceUnroll = tuningParams.getForceUnroll();
-
     int64_t kPerBlock = kpacksPerBlock * kpack;
-
-    int64_t aVectorLen = 0;
-    int64_t bVectorLen = 0;
-    GemmDimension aVectorDim;
-    GemmDimension bVectorDim;
 
     int64_t aCopyPerThread = (kPerBlock * mPerBlock) / blockSize;
     int64_t bCopyPerThread = (kPerBlock * nPerBlock) / blockSize;
     if (aCopyPerThread == 0 || bCopyPerThread == 0) {
       return emitError(loc) << "Block size too large, rejecting as invalid.\n";
     }
-    int64_t aCopyKpacksPerThread =
-        math_util::integer_divide_ceil(aCopyPerThread, kpack);
-    int64_t bCopyKpacksPerThread =
-        math_util::integer_divide_ceil(bCopyPerThread, kpack);
 
-    // Get the vector copy layout for A and B
     auto maybeCopyAPerThread = computeCopyPerThread(
         elementTypeA, aCopyPerThread, kPerBlock, mPerBlock, kpack, loc);
     if (failed(maybeCopyAPerThread))
@@ -2029,6 +2037,11 @@ struct GridwiseGemmAccelRewritePattern
     int64_t copyNPerThread = (*maybeCopyBPerThread).second;
 
     // Find the best way of vectorizing the layout
+    int64_t aVectorLen = 0;
+    int64_t bVectorLen = 0;
+    GemmDimension aVectorDim;
+    GemmDimension bVectorDim;
+
     GemmDimension vectorTiebreaker =
         (kpack > 1) ? GemmDimension::K : GemmDimension::MorN;
     std::tie(aVectorDim, aVectorLen) = bestGlobalVectorization(
@@ -2038,25 +2051,6 @@ struct GridwiseGemmAccelRewritePattern
         b, matB, copyNPerThread, bCopyKPerThread, vectorTiebreaker, kPerBlock,
         nPerBlock, elementTypeB);
 
-    LLVM_DEBUG(llvm::dbgs()
-               << "gridSize: " << gridSize << "\n"
-               << "blockSize: " << blockSize << "\n"
-               << "aCopyPerThread: " << aCopyPerThread << "\n"
-               << "bCopyPerThread: " << bCopyPerThread << "\n"
-               << "aCopyKpacksPerThread: " << aCopyKpacksPerThread << "\n"
-               << "bCopyKpacksPerThread: " << bCopyKpacksPerThread << "\n"
-               << "aVectorDim: " << aVectorDim << "\n"
-               << "aVectorLen: " << aVectorLen << "\n"
-               << "bVectorDim: " << bVectorDim << "\n"
-               << "bVectorLen: " << bVectorLen << "\n"
-               << "vectorTiebreaker: " << vectorTiebreaker << "\n"
-               << "kPerBlock: " << kPerBlock << "\n"
-               << "mPerBlock: " << mPerBlock << "\n"
-               << "nPerBlock: " << nPerBlock << "\n"
-               << "aCopyKPerThread: " << aCopyKPerThread << "\n"
-               << "bCopyKPerThread: " << bCopyKPerThread << "\n"
-               << "copyMPerThread: " << copyMPerThread << "\n"
-               << "copyNPerThread: " << copyNPerThread << "\n");
     SmallVector<int64_t, 3> bidGridLengths = {G, mBlocks, nBlocks};
     SmallVector<StringRef, 3> bidGridOrder = {"g_block", "m_block", "n_block"};
     FailureOr<RegsAsMatrixSubTiles> maybeABufferViews = getLoadRegsAsTileViews(
@@ -2092,7 +2086,6 @@ struct GridwiseGemmAccelRewritePattern
     auto loadBufferA = b.create<GpuAllocOp>(loc, loadBufferAType);
     auto loadBufferB = b.create<GpuAllocOp>(loc, loadBufferBType);
 
-    auto zeroConstantOp = b.create<ConstantIndexOp>(loc, 0);
     // Compute grid coordinates
     auto gridCoords = layout::makeGroupedGridLayout(
         b, loc, bid, {mBlocks, nBlocks, op.getNumCU(), elementTypeA, destType});
@@ -2115,13 +2108,9 @@ struct GridwiseGemmAccelRewritePattern
     bool isKContiguousDimA = aVectorDim == GemmDimension::K;
     bool isKContiguousDimB = bVectorDim == GemmDimension::K;
 
-    // LDS bank conflicts parameters
     int64_t maxVlenA = 128 / elementTypeA.getIntOrFloatBitWidth();
     int64_t maxVlenB = 128 / elementTypeB.getIntOrFloatBitWidth();
-    // If kpack is less than the hardware max vector length, and we are
-    // writing more contiguous kpack elements, there is a possibility to
-    // vectorize that we want to preserve (i.e., we favour vectorization over
-    // bank conflicts resolution)
+
     bool isPossibleToVectorizeA = (kpack < maxVlenA && copyMPerThread > 1);
     bool isPossibleToVectorizeB = (kpack < maxVlenB && copyNPerThread > 1);
     bool rotateMWithK = isKContiguousDimA && !isPossibleToVectorizeA;
@@ -2157,8 +2146,9 @@ struct GridwiseGemmAccelRewritePattern
     ArrayAttr storeBufferAViews =
         invertTransforms(b, loc, maybeALdsStoreViews->threadSubTile);
     Value viewStoreBufferA = transform(b, storeBufferA, storeBufferAViews);
-    auto packALoop = b.create<ThreadwiseCopyOp>(loc, viewLoadBufferA,
-                                                viewStoreBufferA, false, false);
+    auto packALoop = b.create<ThreadwiseCopyOp>(
+        loc, viewLoadBufferA, viewStoreBufferA, useIndexDif, non_useIndexDif);
+    ;
     ArrayAttr loadBufferBViews =
         invertTransforms(b, loc, maybeBBufferViews->threadSubTile);
     Value viewLoadBufferB = transform(b, loadBufferB, loadBufferBViews);
@@ -2173,58 +2163,19 @@ struct GridwiseGemmAccelRewritePattern
     if (failed(maybeBLdsStoreViews)) {
       return failure();
     }
+
     ArrayAttr storeBufferBViews =
         invertTransforms(b, loc, maybeBLdsStoreViews->threadSubTile);
     Value viewStoreBufferB = transform(b, storeBufferB, storeBufferBViews);
-    auto packBLoop = b.create<ThreadwiseCopyOp>(loc, viewLoadBufferB,
-                                                viewStoreBufferB, false, false);
-    // Obtain Accelerator-related attributes.
-    int64_t mPerWave = tuningParams.getMPerWave();
-    int64_t nPerWave = tuningParams.getNPerWave();
 
-    auto accelEmitterPtr = accel::AccelEmitter::select(
-        op.getFeatures(), elementTypeA, elementTypeB, arch, tuningParams);
+    auto packBLoop = b.create<ThreadwiseCopyOp>(
+        loc, viewLoadBufferB, viewStoreBufferB, useIndexDif, non_useIndexDif);
 
-    if (!accelEmitterPtr)
-      return op.emitOpError("Unable to emit accelerator code.");
-
-    // Extract relevant accelerator parameters
-    rock::accel::AccelEmitterParams params = accelEmitterPtr->getParams();
-    int64_t nResultVectors = params.nResultVectors;
-    int64_t mRepeats = params.mRepeats;
-    int64_t nRepeats = params.nRepeats;
-    int64_t kBasePerThread = params.kBasePerThread;
-    Type argTypeA = params.argTypeA;
-    Type argTypeB = params.argTypeB;
-    VectorType accVectorType = params.accVectorType;
-    int64_t numOutputVectorElements = params.numOutputVectorElements();
-    bool useIndexDiffs = true;
-
-    LLVM_DEBUG(llvm::dbgs() << "M: " << M << "\n"
-                            << "N: " << N << "\n"
-                            << "K: " << K << "\n"
-                            << "G: " << G << "\n"
-                            << "mPerBlock: " << mPerBlock << "\n"
-                            << "nPerBlock: " << nPerBlock << "\n"
-                            << "kPerBlock: " << kPerBlock << "\n"
-                            << "kpack: " << kpack << "\n"
-                            << "mBlocks = M / mPerBlock: " << mBlocks << "\n"
-                            << "nBlocks = N / nPerBlock: " << nBlocks << "\n"
-                            << "mPerWave: " << mPerWave << "\n"
-                            << "nPerWave: " << nPerWave << "\n"
-                            << "aVectorLen: " << aVectorLen << "\n"
-                            << "bVectorLen: " << bVectorLen << "\n"
-                            << "aVectorDim: " << aVectorDim << "\n"
-                            << "bVectorDim: " << bVectorDim << "\n");
-
-    // Alocate LDS and create subviews.
-
-    // Compute required LDS sizes.
     int64_t ldsBlockASize =
         kpacksPerBlock * mPerBlock * kpack * getByteWidth(elementTypeA);
     int64_t ldsBlockBSize =
         kpacksPerBlock * nPerBlock * kpack * getByteWidth(elementTypeB);
-    LLVM_DEBUG(llvm::dbgs() << "LDS block sizes (bytes): " << ldsBlockASize
+    LLVM_DEBUG(llvm::dbgs() << "LDS block size (in bytes):" << ldsBlockASize
                             << " " << ldsBlockBSize << "\n");
     if (failed(checkLDSSize(op, ldsBlockASize, ldsBlockBSize)))
       return op.emitOpError("requires too much LDS");
@@ -2267,18 +2218,22 @@ struct GridwiseGemmAccelRewritePattern
         loc, storeBufferA, wrappedLdsA,
         /*extraViews=*/b.getArrayAttr({}),
         /*extraIndices=*/ValueRange{tid}, op.getFeatures(), StoreMethod::Set,
-        /*forceUnroll=*/forceUnroll, /*useIndexDiffs=*/true);
+        /*forceUnroll=*/true, /*useIndexDiffs=*/true);
     ThreadwiseWriteAllOp blockwiseStoreB = b.create<ThreadwiseWriteAllOp>(
         loc, storeBufferB, wrappedLdsB,
         /*extraViews=*/b.getArrayAttr({}),
         /*extraIndices=*/ValueRange{tid}, op.getFeatures(), StoreMethod::Set,
-        /*forceUnroll=*/forceUnroll, /*useIndexDiffs=*/true);
+        /*forceUnroll=*/true, /*useIndexDiffs=*/true);
+
+    // The blockwise gemm isn't set up for vector-of-kpack loads and so
+    // expects a scalar kpacksPerBlock x dPerBlock x kpack x T buffer
+    // unconditionally.
 
     Value ldsViewForGemmA = viewBufferAs(b, ldsByteBufferA, ldsReadTypeA);
     Value ldsViewForGemmB = viewBufferAs(b, ldsByteBufferB, ldsReadTypeB);
-    int64_t nOutputVectors = nResultVectors * mRepeats * nRepeats;
 
-    // Logic to setup buffers for blockwise_gemm_accel.
+    Type argTypeA = params1.argTypeA;
+    Type argTypeB = params1.argTypeB;
 
     Type arrayAType, arrayBType;
     arrayAType = MemRefType::get({kBasePerThread}, argTypeA, AffineMap{},
@@ -2288,17 +2243,25 @@ struct GridwiseGemmAccelRewritePattern
     auto arrayA = b.create<GpuAllocOp>(loc, arrayAType);
     auto arrayB = b.create<GpuAllocOp>(loc, arrayBType);
 
-    // -----
-    // Logic to allocate 0-initialized vectors for C.
-    MemRefType regCAllocType =
-        MemRefType::get(nOutputVectors, accVectorType, AffineMap{},
+    // Alloc reg C
+
+    MemRefType
+        regCAllocType = // memref<16xvector<8xf32>, #gpu.address_space<private>>
+        MemRefType::get(nOutputVectors, params1.accType, AffineMap{},
                         /*memorySpace=*/privateMemoryAddressSpace);
     Value regCAllocOp = b.create<rock::GpuAllocOp>(loc, regCAllocType);
 
-    Value zeroConstantCOp = createZeroConstantOp(b, loc, accVectorType);
+    Value zeroConstantCOp = createZeroConstantOp(b, loc, params1.accType);
     b.create<FillOp>(loc, regCAllocOp, zeroConstantCOp);
 
+    llvm::outs() << "ArrayA : " << arrayAType
+                 << "\n"; // non-accel -> memref<0xvector<16xf16>,
+                          // #gpu.address_space<private>>
+    llvm::outs() << "ArrayB : " << arrayBType << "\n";
+    llvm::outs() << "DEBUG-Calloc: " << regCAllocType << "\n";
+
     // Emit loop.
+
     int64_t nIterations = K / kPerBlock;
     BlockwiseGemmAccelOp blockwiseGemmAccelOp;
     // Start at 1 to make it clearer we have performed software pipelining.
@@ -2325,7 +2288,17 @@ struct GridwiseGemmAccelRewritePattern
       // LDS barrier.
       b.create<LDSBarrierOp>(loc);
 
+      llvm::outs() << "\nldsViewForGemmA : " << ldsViewForGemmA << "\n";
+      llvm::outs() << "\nldsViewForGemmB : " << ldsViewForGemmB << "\n";
+      llvm::outs() << "ArrayA : " << arrayA
+                   << "\n"; // non-accel -> memref<0xvector<16xf16>,
+                            // #gpu.address_space<private>>
+      llvm::outs() << "ArrayB : " << arrayB << "\n";
+
       // Emit blockwise GEMM.
+      ArrayAttr transformsA;
+      b.getArrayAttr(transformsA);
+      llvm::outs() << "\n arrayAtibutes" << transformsA << "\n";
       blockwiseGemmAccelOp = b.create<BlockwiseGemmAccelOp>(
           loc, ldsViewForGemmA, ldsViewForGemmB,
           b.getI32IntegerAttr(copyMPerThread),
@@ -2334,6 +2307,9 @@ struct GridwiseGemmAccelRewritePattern
           (rotateNWithK ? b.getUnitAttr() : nullptr), arrayA, arrayB,
           regCAllocOp, op.getArchAttr(), op.getFeaturesAttr(),
           op.getBlockSizeAttr(), op.getParamsAttr());
+    
+      llvm::outs() << "\n arrayAtibutes" << transformsA << "\n";
+      LLVM_DEBUG(llvm::dbgs() << "DEBUG: after create accel op ");
 
       // LDS barrier.
       // This barrier prevents halo part of outputs having weird values.
@@ -2364,24 +2340,24 @@ struct GridwiseGemmAccelRewritePattern
       b.eraseOp(loopOp);
     }
 
-    // -----
+    auto convertedCType = MemRefType::get(
+        nOutputVectors, destType, AffineMap{},      //  ??? nOutputVector rename
+        /*memorySpace=*/privateMemoryAddressSpace); // ??? only for wmma?
 
-    // Matrix C write out logic.
-    auto convertedCType =
-        MemRefType::get(numOutputVectorElements, destType, AffineMap{},
-                        /*memorySpace=*/privateMemoryAddressSpace);
     Value convertedC = b.create<rock::GpuAllocOp>(loc, convertedCType);
 
     ArrayAttr idToMatrixCMaps =
-        accelEmitterPtr
+        accelEmitterPtr2
             ->computeOutputTransforms(b, loc, M, N, blockSize, bidGridLengths,
                                       copyMPerThread, copyNPerThread,
                                       doSwapThreadIterSubDimsForM,
                                       doSwapThreadIterSubDimsForN)
             .gridSubTile;
 
-    accelEmitterPtr->computeOutputConversion(b, loc, regCAllocOp, convertedC,
-                                             forceUnroll);
+    if (isWmma) {
+      accelEmitterPtr2->computeOutputConversion(b, loc, regCAllocOp, convertedC,
+                                                forceUnroll);
+    }
 
     b.create<ThreadwiseWriteAllOp>(
         loc, convertedC, op.getC(), idToMatrixCMaps,
@@ -2389,6 +2365,7 @@ struct GridwiseGemmAccelRewritePattern
         ValueRange{gridCoords.g_block, gridCoords.m_block, gridCoords.n_block,
                    tid},
         op.getFeatures(), op.getStoreMethod(), forceUnroll, useIndexDiffs);
+
     b.eraseOp(op);
     return success();
   }

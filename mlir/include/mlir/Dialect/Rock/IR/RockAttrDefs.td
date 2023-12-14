@@ -206,7 +206,7 @@ def Rock_TransformMapAttr : Rock_Attr<"TransformMap"> {
     let genVerifyDecl = 1;
 }
 
-def Rock_GeneralGemmParamsAttr : Rock_Attr<"GeneralGemmParams", [RockTuningParamAttrInterface]> {
+def Rock_GeneralGemmParamsAttr : Rock_Attr<"GeneralGemmParams", [RockTuningParamAttrInterface, RockAccelTuningParamAttrInterface]> {
   let mnemonic = "general_gemm_params";
   let description = [{
     The tuning parameters for a general (no special instructions) matrix

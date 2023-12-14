@@ -1653,7 +1653,8 @@ LogicalResult AccelGemmOp::verify() {
 // GridwiseAttentionAccelOp
 //===----------------------------------------------------------------------===//
 LogicalResult GridwiseAttentionAccelOp::verify() {
-  RockAccelTuningParamAttrInterface gemm0TuningParams = getParams();
+  RockAccelTuningParamAttrInterface rawGemm0TuningParams = getParams();
+  auto gemm0TuningParams = rawGemm0TuningParams.dyn_cast<WmmaGemmParamsAttr>();
   int64_t gemm0kpack = gemm0TuningParams.getKpack();
   int64_t gemm0KpacksPerBlock = gemm0TuningParams.getKpackPerBlock();
   int64_t gemm0MPerBlock = gemm0TuningParams.getMPerBlock();
@@ -1946,6 +1947,10 @@ LogicalResult AttentionOp::verify() {
 
   return success();
 }
+
+//int64_t Rock_GeneralGemmParamsAttr::getNPerWawe(){
+//  return getNPerThread * 64;
+//}
 
 //===----------------------------------------------------------------------===//
 // TableGen'd op method definitions

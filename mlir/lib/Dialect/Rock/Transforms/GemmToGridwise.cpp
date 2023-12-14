@@ -115,6 +115,7 @@ LogicalResult
 GemmRewritePattern::matchAndRewrite(GemmOp op, GemmOpAdaptor adaptor,
                                     ConversionPatternRewriter &rw) const {
   Location loc = op->getLoc();
+  MLIRContext *ctx = getContext();
 
   if (!adaptor.getA().getType().isa<MemRefType>())
     return op.emitOpError("Cannot lower unbufferized gemm to gridwise");
@@ -145,6 +146,7 @@ GemmRewritePattern::matchAndRewrite(GemmOp op, GemmOpAdaptor adaptor,
 
   IntegerAttr blockSize = op.getDerivedBlockSizeAttr();
   IntegerAttr numCUAttr = op.getNumCUAttr();
+  int64_t blocksize = op.getBlockSize();
   if (!numCUAttr) {
     int64_t minNumCU = rock::lookupArchInfo(op.getArchAttr()).minNumCU;
     numCUAttr = rw.getI32IntegerAttr(minNumCU);
@@ -162,12 +164,15 @@ GemmRewritePattern::matchAndRewrite(GemmOp op, GemmOpAdaptor adaptor,
   if (isAccel) {
     rw.create<GridwiseGemmAccelOp>(
         loc, a, b, accumulator, op.getArchAttr(), numCUAttr,
-        op.getFeaturesAttr(), op.getStoreMethodAttr(), blockSize, gridSize,
+        op.getFeaturesAttr(), op.getStoreMethodAttr(),blockSize,gridSize,
         params.cast<RockAccelTuningParamAttrInterface>());
   } else {
-    rw.create<GridwiseGemmOp>(loc, a, b, accumulator, op.getFeaturesAttr(),
-                              numCUAttr, gridSize,
-                              params.cast<GeneralGemmParamsAttr>());
+    auto tuningParams = params.cast<RockAccelTuningParamAttrInterface>().dyn_cast<GeneralGemmParamsAttr>();
+    IntegerAttr intAttr = IntegerAttr::get(IntegerType::get(ctx, 32), tuningParams.getBlockSize());
+    rw.create<GridwiseGemmAccelOp>(
+        loc, a, b, accumulator, op.getArchAttr(), numCUAttr,
+        op.getFeaturesAttr(), op.getStoreMethodAttr(),intAttr,gridSize,
+        params.cast<RockAccelTuningParamAttrInterface>());
   }
 
   if (accumulator != c) {
@@ -202,7 +207,6 @@ AttentionRewritePattern::matchAndRewrite(AttentionOp op,
                                          AttentionOpAdaptor adaptor,
                                          ConversionPatternRewriter &rw) const {
   Location loc = op->getLoc();
-
   if (!adaptor.getQueries().getType().isa<MemRefType>())
     return op.emitOpError("Cannot lower unbufferized gemm to gridwise");
 
