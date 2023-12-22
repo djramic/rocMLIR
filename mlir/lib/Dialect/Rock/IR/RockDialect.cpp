@@ -1479,6 +1479,8 @@ ThreadwiseReadIntoOp::cloneWithExtraIndices(OpBuilder &builder,
 LogicalResult ThreadwiseReadIntoOp::verify() {
   MemRefType destType = getDest().getType();
   MemRefType srcType = getSource().getType();
+  //llvm::outs() << "destType: " << destType << "\n";
+  //llvm::outs() << "srcType: " << srcType << "\n";
   Attribute dstMemSpaceAttr = destType.getMemorySpace();
   Attribute srcMemSpaceAttr = srcType.getMemorySpace();
   auto gpuDstMemSpaceAttr =
@@ -1501,6 +1503,8 @@ LogicalResult ThreadwiseReadIntoOp::verify() {
     if (extraIdxCount != 0)
       return emitOpError("read from a scalar value cannot have coordinates");
   } else if (inputShape.size() != extraIdxCount + 1) {
+    llvm::outs() << extraIdxCount << "\n";
+    llvm::outs() << inputShape.size() << "\n";
     return emitOpError("source view must be extraIndices + 1");
   }
 

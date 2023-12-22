@@ -158,7 +158,97 @@ Value FmaEmitter::wrapLDSBufferForLoad(OpBuilder &b, Location loc, Value buffer,
                                      int64_t blockSize,
                                      int64_t dInCopyPerThread, StringRef dName,
                                      bool rotateDWithK) const {
+
+  llvm::outs() << "\nwrapLDSBufferForLoad FMA" << "\n";
+  int64_t mRepeat = accelEmitterParams.mRepeats;
+  int64_t nRepeat = accelEmitterParams.nRepeats;
+  int64_t mPerThread = accelEmitterParams.mPerThread;
+  int64_t m = accelEmitterParams.mPerBlock;
+  int64_t n = accelEmitterParams.nPerBlock;
+  int64_t k = accelEmitterParams.kpacksPerBlock;
+  int64_t kPack = accelEmitterParams.kpack;
+
+
+  GeneralGemmBlockStructure blockStructure =
+          *deriveGeneralGemmBlockStructure(blockSize);
+  int64_t mThreadsPerCuwave = blockStructure.mThreadsPerCuwave;
+  int64_t nThreadsPerCuwave = blockStructure.nThreadsPerCuwave;
+  int64_t mCuwavesPerBlock = blockStructure.mCuwavesPerBlock;
+  int64_t nCuwavesPerBlock = blockStructure.nCuwavesPerBlock;
+
   
+  llvm::outs() << "\n -- got attributes" << "\n";
+  SmallVector<Attribute> transformAttrs;
+
+  auto ldsTidSplitter = [&](StringRef repeatName, int64_t repeatLen,
+                                StringRef perThreadName,
+                                int64_t perThreadLen) -> TopDownTMBuilder {
+    TopDownTMBuilder splitTidForLDS(
+            b, {"k", repeatName, "tid", perThreadName, "kpack"},
+            {k, repeatLen, blockSize, perThreadLen, kPack}, loc);
+    splitTidForLDS.passThrough({"k", repeatName});
+    splitTidForLDS.merge({"m_cuwaves", "n_cuwaves", "m_cuwave", "n_cuwave"},
+                             {2, 3, 4, 5}, "tid",
+                             {mCuwavesPerBlock, nCuwavesPerBlock,
+                              mThreadsPerCuwave, nThreadsPerCuwave});
+    splitTidForLDS.passThrough({perThreadName, "kpack"}, {6, 7},
+                                   {perThreadName, "kpack"});
+    return splitTidForLDS;
+  };
+  llvm::outs() << "\n -- finish ldsTidSplitter" << "\n";
+
+  TopDownTMBuilder splitTidA =
+          ldsTidSplitter("m_repeat", mRepeat, "m_thread", mPerThread);
+  TransformMapAttr splitTidAAttr = splitTidA.get();
+  auto toLdsIndexA = TopDownTMBuilder::below(splitTidA, splitTidAAttr);
+  toLdsIndexA.passThrough("k");
+  toLdsIndexA.unmerge(
+          "m", 1, {"m_repeat", "m_cuwaves", "m_cuwave", "m_thread"},
+          {mRepeat, mCuwavesPerBlock, mThreadsPerCuwave, mPerThread});
+  toLdsIndexA.ignore("n_cuwaves");
+  toLdsIndexA.ignore("n_cuwave");
+  toLdsIndexA.passThrough({"kpack"}, {2}, {"kpack"});
+  TransformMapAttr toLdsIndexAAttr = toLdsIndexA.get();
+  SmallVector<Attribute> transformAttrsA{splitTidAAttr, toLdsIndexAAttr};
+
+  llvm::outs() << "\n -- finish splitTidA" << "\n";
+  int64_t strideA = (k == 1 ? dInCopyPerThread : 1);
+    rotateIf(rotateDWithK, toLdsIndexA, toLdsIndexAAttr, strideA, "m",
+               m, 1, "k", k, {"k"}, {"kpack"}, transformAttrsA);
+
+  Value matrixA = buffer;
+
+  ArrayRef<int64_t> shape = {k,m,kPack};
+  ArrayRef<StringRef> names = {"k", "m", "kpack"};
+
+  MemRefType bufferType = matrixA.getType().cast<MemRefType>();
+  ArrayRef<int64_t> outShape = bufferType.getShape();
+  assert(outShape.size() == 1 && "Buffer being reshaped must start linear");
+  SmallVector<int64_t> strides;
+  strides.reserve(shape.size());
+  int64_t stride = 1;
+  for (int64_t v : llvm::reverse(shape)) {
+    stride *= v;
+  }
+  assert(stride == outShape[0] && "Strides must multiply to buffer length");
+
+  TopDownTMBuilder transform1(b, names, shape, loc);
+  transform1.unmerge("raw", 0, names, shape);
+
+  TransformMapAttr transformAttr = transform1.get();
+
+  Value newMatrixA = b.create<TransformOp>(loc, matrixA, transformAttr);
+
+  ArrayAttr transformsA;
+
+  bool ldsANeedsi64, ldsBNeedsi64;
+  std::tie(matrixA, transformsA, ldsANeedsi64) =
+          untransform(b, newMatrixA, b.getArrayAttr(transformAttrsA));
+  //if (ldsANeedsi64 || ldsBNeedsi64)
+    //return b.notifyMatchFailure(loc, "LDS map can't need 64-bit indexing");
+  llvm::outs() <<"buffer : " << buffer << "\n";
+  return transform(b, buffer, transformsA);
+
 }
 
 RegsAsMatrixSubTiles FmaEmitter::computeOutputTransforms(
@@ -817,6 +907,7 @@ Value WmmaEmitter::wrapLDSBufferForLoad(OpBuilder &b, Location loc,
   transformAttrs.push_back(offsetAttr);
 
   ArrayAttr ldsRead = b.getArrayAttr(transformAttrs);
+  llvm::outs() <<"buffer : " << buffer << "\n";
   return transform(b, buffer, ldsRead);
 }
 
