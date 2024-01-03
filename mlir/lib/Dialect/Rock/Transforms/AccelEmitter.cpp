@@ -23,6 +23,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AccelEmitter.h"
+#include "mlir/Dialect/Rock/Tuning/GeneralGemmBlockStructure.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Rock/utility/AmdArchDb.h"
 #include "mlir/Dialect/Rock/utility/loweringUtils.h"
@@ -89,6 +90,324 @@ void AccelEmitter::computeOutputConversion(PatternRewriter &b, Location loc,
 }
 
 // **************************
+// Fma accelerator interface
+// **************************
+
+FmaEmitter::FmaEmitter(FmaInsn fmaInsn, StringRef arch,
+                        RockAccelTuningParamAttrInterface tuningParams)
+    : AccelEmitter{arch, tuningParams,
+                   initAccelEmitterParams(fmaInsn, tuningParams)},
+      fmaInsn(fmaInsn) {}
+
+AccelEmitterParams FmaEmitter::initAccelEmitterParams(
+    FmaInsn fmaInsn, RockAccelTuningParamAttrInterface rawTuningParams) {
+    AccelEmitterParams params;
+
+    auto tuningParams = rawTuningParams.dyn_cast<GeneralGemmParamsAttr>();
+
+    params.kpack = tuningParams.getKpack();
+    params.blockSize = tuningParams.getBlockSize();
+    params.kpacksPerBlock = tuningParams.getKPerBlock();
+    params.kPerThread = tuningParams.getKPerThread();
+    params.mPerBlock = tuningParams.getMPerBlock();
+    params.nPerBlock = tuningParams.getNPerBlock();
+    params.mPerThread = tuningParams.getMPerThread();
+    params.nPerThread = tuningParams.getNPerThread();
+    params.forceUnroll = tuningParams.getForceUnroll();
+    params.non_useIndexDiffs = true;
+    params.useIndexDiffs = true;
+    params.kBase = fmaInsn.inputLen;
+    params.argTypeA = fmaInsn.argTypeA;  //???
+    params.argTypeB = fmaInsn.argTypeB;  //???
+    params.kBasePerThread = params.kpacksPerBlock * params.kpack / params.kBase;
+
+    GeneralGemmBlockStructure blockStructure =
+          *deriveGeneralGemmBlockStructure(params.blockSize);
+    int64_t mThreadsPerCuwave = blockStructure.mThreadsPerCuwave;
+    int64_t nThreadsPerCuwave = blockStructure.nThreadsPerCuwave;
+    int64_t mCuwavesPerBlock = blockStructure.mCuwavesPerBlock;
+    int64_t nCuwavesPerBlock = blockStructure.nCuwavesPerBlock;
+
+
+    int64_t gemmMRepeat =
+          params.mPerBlock / (params.mPerThread * mThreadsPerCuwave * mCuwavesPerBlock);
+    int64_t gemmNRepeat =
+          params.nPerBlock / (params.nPerThread * nThreadsPerCuwave * nCuwavesPerBlock);
+
+    int64_t threadCNumM = gemmMRepeat * params.mPerThread;
+    int64_t threadCNumN = gemmNRepeat * params.nPerThread;
+    params.nRepeats = gemmNRepeat;
+    params.mRepeats = gemmMRepeat;
+    params.threadCNumM = threadCNumM;
+    params.threadCNumN = threadCNumN;
+    params.accType = fmaInsn.retType;
+    params.destType = fmaInsn.retType;
+
+    params.nOutputVectors = threadCNumM * threadCNumN;
+
+    return params;
+}
+
+void FmaEmitter::emitThreadwiseLoop(OpBuilder &b, Location loc, Value argA,
+                                     Value argB, Value bufferC,
+                                     ValueRange regCOffset){
+
+
+
+}
+
+Value FmaEmitter::wrapLDSBufferForLoad(OpBuilder &b, Location loc, Value buffer,
+                                     int64_t blockSize,
+                                     int64_t dInCopyPerThread, StringRef dName,
+                                     bool rotateDWithK) const {
+
+  llvm::outs() << "\nwrapLDSBufferForLoad FMA" << "\n";
+  int64_t mRepeat = accelEmitterParams.mRepeats;
+  int64_t nRepeat = accelEmitterParams.nRepeats;
+  int64_t mPerThread = accelEmitterParams.mPerThread;
+  int64_t m = accelEmitterParams.mPerBlock;
+  int64_t n = accelEmitterParams.nPerBlock;
+  int64_t k = accelEmitterParams.kpacksPerBlock;
+  int64_t kPack = accelEmitterParams.kpack;
+  int64_t kpackPerThread = accelEmitterParams.kpackPerThread;
+  int64_t kPerThread = accelEmitterParams.kPerThread;
+
+  GeneralGemmBlockStructure blockStructure =
+          *deriveGeneralGemmBlockStructure(blockSize);
+  int64_t dThreadsPerCuwave = (dName == "m" ? blockStructure.mThreadsPerCuwave
+                                            : blockStructure.nThreadsPerCuwave);
+  //int64_t nThreadsPerCuwave = blockStructure.nThreadsPerCuwave;
+  int64_t dCuwavesPerBlock = (dName == "m" ? blockStructure.mCuwavesPerBlock
+                                           : blockStructure.nCuwavesPerBlock);
+  //int64_t nCuwavesPerBlock = blockStructure.nCuwavesPerBlock;
+
+  int64_t dRepeats = (dName == "m" ? accelEmitterParams.mRepeats
+                                   : accelEmitterParams.nRepeats);
+  int64_t dPerAccel = (dName == "m" ? accelEmitterParams.mPerAccel
+                                    : accelEmitterParams.nPerAccel);
+  int64_t d = (dName == "m" ? m : n);
+
+  int64_t dPerThread = (dName == "m" ? accelEmitterParams.mPerThread
+                                     : accelEmitterParams.nPerThread);
+  int64_t nPerThread = accelEmitterParams.nPerThread;
+  int64_t nThreadsPerCuwave = blockStructure.nThreadsPerCuwave;
+  int64_t mThreadsPerCuwave = blockStructure.mThreadsPerCuwave;
+
+  int64_t nCuwavesPerBlock = blockStructure.nCuwavesPerBlock;
+  int64_t mCuwavesPerBlock = blockStructure.mCuwavesPerBlock;
+
+
+  SmallVector<Attribute> transformAttrsA;
+  ArrayAttr ldsRead;
+  if(dName == "m"){
+    //reshape buffer
+    MemRefType bufferType = buffer.getType().cast<MemRefType>();
+    ArrayRef<int64_t> outShape = bufferType.getShape();
+    assert(outShape.size() == 1 && "Buffer being reshaped must start linear");
+
+    TopDownTMBuilder transform1(b, {"k","m","kpack"}, {k,m,kPack}, loc);
+    transform1.unmerge("raw", 0, {"k","m","kpack"}, {k,m,kPack});
+    TransformMapAttr transformAttr = transform1.get();
+    llvm::outs() << "\n\nreshape buffer:" << transformAttr <<"\n";
+
+    transformAttrsA.push_back(transformAttr);
+
+    //ldsTidSplitter
+    auto ldsTidSplitter = [&](StringRef repeatName, int64_t repeatLen,
+                                StringRef perThreadName,
+                                int64_t perThreadLen) -> TopDownTMBuilder {
+    TopDownTMBuilder splitTidForLDS(
+            b, {"k", repeatName, "tid", perThreadName, "kpack"},
+            {k, repeatLen, blockSize, perThreadLen, kPack}, loc);
+    splitTidForLDS.passThrough({"k", repeatName});
+    splitTidForLDS.merge({"m_cuwaves", "n_cuwaves", "m_cuwave", "n_cuwave"},
+                            {2, 3, 4, 5}, "tid",
+                            {mCuwavesPerBlock, nCuwavesPerBlock,
+                              mThreadsPerCuwave, nThreadsPerCuwave});
+    splitTidForLDS.passThrough({perThreadName, "kpack"}, {6, 7},
+                                  {perThreadName, "kpack"});
+    return splitTidForLDS;
+    };
+
+    TopDownTMBuilder splitTidA = 
+      ldsTidSplitter("m_repeat", mRepeat, "m_thread", mPerThread);
+    TransformMapAttr splitTidAAttr = splitTidA.get();
+
+    llvm::outs() << "\n\nsplitTidA" << splitTidAAttr << "\n";
+    transformAttrsA.push_back(splitTidAAttr);
+
+
+    //toLdsIndexA
+    auto toLdsIndexA = TopDownTMBuilder::below(splitTidA, splitTidAAttr);
+    toLdsIndexA.passThrough("k");
+    toLdsIndexA.unmerge(
+          "m", 1, {"m_repeat", "m_cuwaves", "m_cuwave", "m_thread"},
+          {mRepeat, mCuwavesPerBlock, mThreadsPerCuwave, mPerThread});
+    toLdsIndexA.ignore("n_cuwaves");
+    toLdsIndexA.ignore("n_cuwave");
+    toLdsIndexA.passThrough({"kpack"}, {2}, {"kpack"});
+    TransformMapAttr toLdsIndexAAttr = toLdsIndexA.get();
+
+    llvm::outs() << "\n\ntoLdsIndexAAttr" << toLdsIndexAAttr << "\n";
+    transformAttrsA.push_back(toLdsIndexAAttr);
+
+    int64_t strideA = (kPack == 1 ? dInCopyPerThread : 1);
+    rotateIf(rotateDWithK, toLdsIndexA, toLdsIndexAAttr, strideA, "m",
+              m, 1, "k", k, {"k"}, {"kpack"}, transformAttrsA);
+              
+    llvm::outs() << "\n\ntransformAttrsA: \n" << b.getArrayAttr(transformAttrsA) << "\n";
+    ldsRead = b.getArrayAttr(transformAttrsA);
+  }
+  else{
+    //reshape buffer
+    MemRefType bufferType = buffer.getType().cast<MemRefType>();
+    ArrayRef<int64_t> outShape = bufferType.getShape();
+    assert(outShape.size() == 1 && "Buffer being reshaped must start linear");
+
+    TopDownTMBuilder transform1(b, {"k","n","kpack"}, {k,n,kPack}, loc);
+    transform1.unmerge("raw", 0, {"k","n","kpack"}, {k,n,kPack});
+    TransformMapAttr transformAttr = transform1.get();
+    llvm::outs() << "\n\nreshape buffer:" << transformAttr <<"\n";
+
+    transformAttrsA.push_back(transformAttr);
+
+    //ldsTidSplitter
+    auto ldsTidSplitter = [&](StringRef repeatName, int64_t repeatLen,
+                                StringRef perThreadName,
+                                int64_t perThreadLen) -> TopDownTMBuilder {
+    TopDownTMBuilder splitTidForLDS(
+            b, {"k", repeatName, "tid", perThreadName, "kpack"},
+            {k, repeatLen, blockSize, perThreadLen, kPack}, loc);
+    splitTidForLDS.passThrough({"k", repeatName});
+    splitTidForLDS.merge({"m_cuwaves", "n_cuwaves", "m_cuwave", "n_cuwave"},
+                            {2, 3, 4, 5}, "tid",
+                            {mCuwavesPerBlock, nCuwavesPerBlock,
+                              mThreadsPerCuwave, nThreadsPerCuwave});
+    splitTidForLDS.passThrough({perThreadName, "kpack"}, {6, 7},
+                                  {perThreadName, "kpack"});
+    return splitTidForLDS;
+    };
+
+    TopDownTMBuilder splitTidA = 
+      ldsTidSplitter("n_repeat", nRepeat, "n_thread", nPerThread);
+    TransformMapAttr splitTidAAttr = splitTidA.get();
+
+    llvm::outs() << "\n\nsplitTidA" << splitTidAAttr << "\n";
+    transformAttrsA.push_back(splitTidAAttr);
+
+
+    //toLdsIndexA
+    auto toLdsIndexA = TopDownTMBuilder::below(splitTidA, splitTidAAttr);
+    toLdsIndexA.passThrough("k");
+    toLdsIndexA.unmerge(
+          "n", 1, {"n_repeat", "n_cuwaves", "n_cuwave", "n_thread"},
+          {nRepeat, nCuwavesPerBlock, nThreadsPerCuwave, nPerThread});
+    toLdsIndexA.ignore("m_cuwaves");
+    toLdsIndexA.ignore("m_cuwave");
+    toLdsIndexA.passThrough({"kpack"}, {2}, {"kpack"});
+    TransformMapAttr toLdsIndexAAttr = toLdsIndexA.get();
+
+    llvm::outs() << "\n\ntoLdsIndexAAttr" << toLdsIndexAAttr << "\n";
+    transformAttrsA.push_back(toLdsIndexAAttr);
+
+    int64_t strideA = (kPack == 1 ? dInCopyPerThread : 1);
+    rotateIf(rotateDWithK, toLdsIndexA, toLdsIndexAAttr, strideA, "n",
+              n, 1, "k", k, {"k"}, {"kpack"}, transformAttrsA);
+
+    
+
+    llvm::outs() << "\n\ntransformAttrsA: \n" << b.getArrayAttr(transformAttrsA) << "\n";
+    //transformAttrsA.erase(transformAttrsA.begin());
+    ldsRead = b.getArrayAttr(transformAttrsA);
+  }
+
+  return transform(b, buffer, ldsRead);
+
+}
+
+RegsAsMatrixSubTiles FmaEmitter::computeOutputTransforms(
+
+    PatternRewriter &b, Location loc, int64_t mLen, int64_t nLen,
+    int64_t blockSize, ArrayRef<int64_t> bidGridLengths, int64_t inMPerThread,
+    int64_t inNPerThread, bool doSwapThreadIterSubDimsForM,
+    bool doSwapThreadIterSubDimsForN) {
+
+  auto tuningParams = this->tuningParams.dyn_cast<GeneralGemmParamsAttr>(); 
+
+  //Extract relevant tuning parameters
+  int64_t mPerBlock = tuningParams.getMPerBlock();
+  int64_t nPerBlock = tuningParams.getNPerBlock();
+  int64_t mPerThread = tuningParams.getMPerThread();
+  int64_t nPerThread = tuningParams.getNPerThread();
+  int64_t kpack = tuningParams.getKpack();
+  int64_t kpacksPerBlock = tuningParams.getKPerBlock();
+
+  //Extract derive parameters
+  GeneralGemmBlockStructure blockStructure =
+          *deriveGeneralGemmBlockStructure(blockSize);
+  int64_t mThreadsPerCuwave = blockStructure.mThreadsPerCuwave;
+  int64_t nThreadsPerCuwave = blockStructure.nThreadsPerCuwave;
+  int64_t mCuwavesPerBlock = blockStructure.mCuwavesPerBlock;
+  int64_t nCuwavesPerBlock = blockStructure.nCuwavesPerBlock;
+
+  int64_t kPerBlock = kpacksPerBlock * kpack;
+
+  int64_t gemmMRepeat =
+          mPerBlock / (mPerThread * mThreadsPerCuwave * mCuwavesPerBlock);
+  int64_t gemmNRepeat =
+          nPerBlock / (nPerThread * nThreadsPerCuwave * nCuwavesPerBlock);
+
+  int64_t threadCNumM = gemmMRepeat * mPerThread;
+  int64_t threadCNumN = gemmNRepeat * nPerThread;
+
+  int64_t threadCNumRegisters = threadCNumM * threadCNumN;
+
+      
+  RegsAsMatrixSubTiles ret;
+  {
+    // Create views as gridwise sub-tile of C
+      TopDownTMBuilder splitMemoryCoords(
+          b, {"g_block", "m_block", "n_block", "tid", "iter"},
+          {bidGridLengths[0], bidGridLengths[1], bidGridLengths[2], blockSize, threadCNumRegisters}, loc);
+      splitMemoryCoords.passThrough({"g_block", "m_block", "n_block"});
+      splitMemoryCoords.merge(
+          {"m_cuwaves", "n_cuwaves", "m_cuwave", "n_cuwave"}, {3, 4, 5, 6},
+          "tid",
+          {mCuwavesPerBlock, nCuwavesPerBlock, mThreadsPerCuwave,
+           nThreadsPerCuwave});
+      splitMemoryCoords.merge(
+          {"m_repeat", "m_thread", "n_repeat", "n_thread"}, {7, 8, 9, 10},
+          "iter", {gemmMRepeat, mPerThread, gemmNRepeat, nPerThread});
+      TransformMapAttr splitMemoryCoordsAttr = splitMemoryCoords.get();
+
+      auto toMatrixC =
+          TopDownTMBuilder::below(splitMemoryCoords, splitMemoryCoordsAttr);
+      toMatrixC.passThrough({"gemmG"}, {0}, {"g_block"});
+      toMatrixC.unmerge(
+          "gemmM", 1,
+          {"m_block", "m_repeat", "m_cuwaves", "m_cuwave", "m_thread"},
+          {mPerBlock, gemmMRepeat, mCuwavesPerBlock, mThreadsPerCuwave,
+           mPerThread});
+      toMatrixC.unmerge(
+          "gemmN", 2,
+          {"n_block", "n_repeat", "n_cuwaves", "n_cuwave", "n_thread"},
+          {nPerBlock, gemmNRepeat, nCuwavesPerBlock, nThreadsPerCuwave,
+           nPerThread});
+      SmallVector<Attribute> transformAttrs{splitMemoryCoordsAttr};
+      swapThreadIdAndIteration(toMatrixC, /*mBlocks=*/bidGridLengths[1],
+                               /*nBlocks=*/bidGridLengths[2], inMPerThread,
+                               inNPerThread, mPerBlock, nPerBlock,
+                               doSwapThreadIterSubDimsForM,
+                               doSwapThreadIterSubDimsForN,
+                               /*isBlockwise=*/false, transformAttrs);
+      ret.gridSubTile = b.getArrayAttr(transformAttrs);
+  }
+
+  return ret; 
+}
+
+
+// **************************
 // Mfma accelerator interface
 // **************************
 
@@ -99,10 +418,10 @@ MfmaEmitter::MfmaEmitter(MfmaInsnGroup mfmaGroup, StringRef arch,
       mfmaGroup{mfmaGroup} {}
 
 AccelEmitterParams MfmaEmitter::initAccelEmitterParams(
-    MfmaInsnGroup mfmaGroup, RockAccelTuningParamAttrInterface tuningParams) {
+    MfmaInsnGroup mfmaGroup, RockAccelTuningParamAttrInterface RawTuningParams) {
   AccelEmitterParams params;
   MfmaInsnAttr mfmaAttr = mfmaGroup.getInsnAttr();
-
+  auto tuningParams = RawTuningParams.dyn_cast<XdlopsGemmParamsAttr>();
   // Extract relevant tuning parameters
   int64_t kpackPerBlock = tuningParams.getKpackPerBlock();
   int64_t mPerWave = tuningParams.getMPerWave();
@@ -186,7 +505,7 @@ RegsAsMatrixSubTiles MfmaEmitter::computeOutputTransforms(
     int64_t blockSize, ArrayRef<int64_t> bidGridLengths, int64_t inMPerThread,
     int64_t inNPerThread, bool doSwapThreadIterSubDimsForM,
     bool doSwapThreadIterSubDimsForN) {
-
+    auto tuningParams = this->tuningParams.dyn_cast<XdlopsGemmParamsAttr>();
   // Extract relevant tuning parameters
   int64_t mPerBlock = tuningParams.getMPerBlock();
   int64_t nPerBlock = tuningParams.getNPerBlock();
@@ -405,7 +724,7 @@ Value MfmaEmitter::wrapLDSBufferForLoad(OpBuilder &b, Location loc,
 
   StringRef thisWaveDim = dName == "m" ? "wave_m" : "wave_n";
   StringRef otherWaveDim = dName == "m" ? "wave_n" : "wave_m";
-
+  auto tuningParams = this->tuningParams.dyn_cast<XdlopsGemmParamsAttr>();
   // Extract relevant tuning parameters
   int64_t mPerWave = tuningParams.getMPerWave();
   int64_t nPerWave = tuningParams.getNPerWave();
@@ -550,25 +869,34 @@ WmmaEmitter::WmmaEmitter(WmmaInsn wmmaInsn, StringRef arch,
       wmmaInsn(wmmaInsn) {}
 
 AccelEmitterParams WmmaEmitter::initAccelEmitterParams(
-    WmmaInsn wmmaInsn, RockAccelTuningParamAttrInterface tuningParams) {
+    WmmaInsn wmmaInsn, RockAccelTuningParamAttrInterface rawTuningParams) {
   AccelEmitterParams params;
-
+  auto tuningParams = rawTuningParams.dyn_cast<WmmaGemmParamsAttr>();
   // Extract relevant tuning parameters
-  int64_t kpackPerBlock = tuningParams.getKpackPerBlock();
-  int64_t kPack = tuningParams.getKpack();
+  params.kpacksPerBlock = tuningParams.getKpackPerBlock();
+  params.kpack = tuningParams.getKpack();
+  params.mPerBlock = tuningParams.getMPerBlock();
+  params.nPerBlock = tuningParams.getNPerBlock();
+  params.forceUnroll = tuningParams.getForceUnroll();
 
   params.mRepeats = wmmaInsn.mRepeats;
   params.nRepeats = wmmaInsn.nRepeats;
   params.nResultVectors = 1;
-  params.kpackPerThread = kpackPerBlock;
+  params.kpackPerThread = params.kpacksPerBlock;
   params.kBase = wmmaInsn.inputLen;
   params.mPerAccel = wmmaInsn.inputLen;
   params.nPerAccel = wmmaInsn.inputLen;
-  params.kBasePerThread = kpackPerBlock * kPack / params.kBase;
+  params.kBasePerThread = params.kpacksPerBlock * params.kpack / params.kBase;
 
   params.argTypeA = wmmaInsn.argTypeA;
   params.argTypeB = wmmaInsn.argTypeB;
   params.accVectorType = wmmaInsn.retType;
+  params.accType = wmmaInsn.retType;
+
+  params.non_useIndexDiffs = false;
+  params.useIndexDiffs = false;
+
+  params.nOutputVectors = params.nResultVectors * params.mRepeats *  params.nRepeats;
 
   return params;
 }
@@ -578,7 +906,7 @@ Value WmmaEmitter::wrapLDSBufferForLoad(OpBuilder &b, Location loc,
                                         int64_t dInCopyPerThread,
                                         StringRef dName,
                                         bool rotateDWithK) const {
-
+  auto tuningParams = this->tuningParams.dyn_cast<WmmaGemmParamsAttr>();                               
   // Extract relevant tuning parameters
   int64_t mPerBlock = tuningParams.getMPerBlock();
   int64_t nPerBlock = tuningParams.getNPerBlock();
@@ -657,6 +985,8 @@ Value WmmaEmitter::wrapLDSBufferForLoad(OpBuilder &b, Location loc,
   transformAttrs.push_back(offsetAttr);
 
   ArrayAttr ldsRead = b.getArrayAttr(transformAttrs);
+  llvm::outs() <<"buffer : " << buffer << "\n";
+  llvm::outs() << "ArrayAttr ldsRead: " << ldsRead <<"\n";
   return transform(b, buffer, ldsRead);
 }
 
@@ -679,7 +1009,8 @@ RegsAsMatrixSubTiles WmmaEmitter::computeOutputTransforms(
     int64_t blockSize, ArrayRef<int64_t> bidGridLengths, int64_t inMPerThread,
     int64_t inNPerThread, bool doSwapThreadIterSubDimsForM,
     bool doSwapThreadIterSubDimsForN) {
-
+      
+  auto tuningParams = this->tuningParams.dyn_cast<WmmaGemmParamsAttr>(); 
   // Extract relevant tuning parameters
   int64_t mPerBlock = tuningParams.getMPerBlock();
   int64_t nPerBlock = tuningParams.getNPerBlock();
@@ -826,11 +1157,12 @@ RegsAsMatrixSubTiles WmmaEmitter::computeOutputTransforms(
 
 std::unique_ptr<AccelEmitter>
 AccelEmitter::select(GemmFeatures features, Type dataTypeA, Type dataTypeB,
-                     StringRef arch,
-                     RockAccelTuningParamAttrInterface tuningParams) {
+                     StringRef arch, 
+                     RockAccelTuningParamAttrInterface rawTuningParams) {
   bool isMfma = rock::bitEnumContainsAll(features, GemmFeatures::mfma);
   bool isWmma = rock::bitEnumContainsAll(features, GemmFeatures::wmma);
   if (isMfma) {
+    auto tuningParams = rawTuningParams.dyn_cast<XdlopsGemmParamsAttr>();
     auto maybeMfmaInsnGroup = MfmaInsnGroup::select(dataTypeA, dataTypeB, arch,
                                                     tuningParams.getMPerWave(),
                                                     tuningParams.getNPerWave());
@@ -840,16 +1172,23 @@ AccelEmitter::select(GemmFeatures features, Type dataTypeA, Type dataTypeB,
     return std::make_unique<MfmaEmitter>(*maybeMfmaInsnGroup, arch,
                                          tuningParams);
   } else if (isWmma) {
-    int64_t waveSize = rock::lookupArchInfo(arch).waveSize;
-    auto maybeWmmaInsnGroup = WmmaInsn::select(dataTypeA, dataTypeB, waveSize,
-                                               tuningParams.getMPerWave(),
-                                               tuningParams.getNPerWave());
-    if (failed(maybeWmmaInsnGroup)) {
-      return nullptr;
-    }
-    return std::make_unique<WmmaEmitter>(*maybeWmmaInsnGroup, arch,
+      auto tuningParams = rawTuningParams.dyn_cast<WmmaGemmParamsAttr>();
+      int64_t waveSize = rock::lookupArchInfo(arch).waveSize;
+      auto maybeWmmaInsnGroup = WmmaInsn::select(dataTypeA, dataTypeB, waveSize,
+                                                tuningParams.getMPerWave(),
+                                                tuningParams.getNPerWave());
+      if (failed(maybeWmmaInsnGroup)) {
+        return nullptr;
+      }
+      return std::make_unique<WmmaEmitter>(*maybeWmmaInsnGroup, arch,
                                          tuningParams);
   } else {
-    return nullptr;
+      auto tuningParams = rawTuningParams.dyn_cast<GeneralGemmParamsAttr>();
+      auto maybeFmaInsnGroup = FmaInsn::select(dataTypeA, dataTypeB, arch);
+      if (failed(maybeFmaInsnGroup)) {
+        return nullptr;
+      }
+      llvm::outs() <<"\nDEBUG: Creating FmeEmitter!\n";
+      return std::make_unique<FmaEmitter>(*maybeFmaInsnGroup, arch, tuningParams);
   }
 }

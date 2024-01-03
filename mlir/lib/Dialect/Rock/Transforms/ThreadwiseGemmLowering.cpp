@@ -255,6 +255,10 @@ struct ThreadwiseAccelGemmRewritePattern
                                 ConversionPatternRewriter &b) const override {
     Location loc = op.getLoc();
 
+    llvm::outs() << "\n\n\n\n-------------------------------------------\n\n"
+                 << "THREADWISE LOWERING\n";
+
+
     RockAccelTuningParamAttrInterface tuningParams = op.getParams();
 
     auto dataTypeA =
@@ -348,10 +352,11 @@ struct ThreadwiseAccelGemmRewritePattern
       auto coordsA = accelLoop.getLowerCoords(/*domain=*/0);
       auto coordsB = accelLoop.getLowerCoords(/*domain=*/1);
       auto coordsC = accelLoop.getLowerCoords(/*domain=*/2);
-
+      llvm::outs() << "Dosao sam do emit loop";
       Value argA = b.create<memref::LoadOp>(loc, argTypeA, rawBufferA, coordsA);
       Value argB = b.create<memref::LoadOp>(loc, argTypeB, rawBufferB, coordsB);
       emitter->emitThreadwiseLoop(b, loc, argA, argB, rawBufferC, coordsC);
+      llvm::outs() << "puko sam";
     }
     b.eraseOp(op);
     return success();
@@ -509,6 +514,7 @@ LogicalResult ThreadwiseReadIntoRewritePattern::matchAndRewrite(
     ConversionPatternRewriter &b) const {
   Location loc = op.getLoc();
   auto sourceView = cast<TypedValue<MemRefType>>(adaptor.getSource());
+  llvm::outs() <<"\n\nDEBUG*** threadwise sourceView" << adaptor.getSource() << "\n";
   ArrayAttr extraViews = op.getExtraViews();
   auto dest = cast<TypedValue<MemRefType>>(adaptor.getDest());
   ArrayRef<int64_t> inputShape;
@@ -520,6 +526,9 @@ LogicalResult ThreadwiseReadIntoRewritePattern::matchAndRewrite(
 
   auto [buffer, transforms, needs64BitIdx] =
       untransform(b, sourceView, extraViews);
+
+  llvm::outs() << "\n------------------untransform------------------\n";
+  llvm::outs() << "\n" << transforms <<"\n";
 
   int64_t numValues = dest.getType().getNumElements();
   MemRefType srcBufferType = buffer.getType().cast<MemRefType>();
@@ -788,6 +797,8 @@ LogicalResult ThreadwiseWriteAllRewritePattern::matchAndRewrite(
 }
 
 void RockThreadwiseGemmLoweringPass::runOnOperation() {
+  llvm::outs() << "\n\n\n\n-------------------------------------------\n\n"
+                 << "THREADWISE LOWERING --> runOnOperation:\n";
   func::FuncOp op = getOperation();
   MLIRContext *ctx = &getContext();
   {

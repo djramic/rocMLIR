@@ -217,7 +217,8 @@ void AffixTuningParameters::affixTuningParametersImpl(AttentionOp op) {
     signalPassFailure();
     return;
   }
-  auto accelParams = params.cast<RockAccelTuningParamAttrInterface>();
+  auto RawaccelParams = params.cast<RockAccelTuningParamAttrInterface>();
+  auto accelParams = RawaccelParams.dyn_cast<WmmaGemmParamsAttr>();
   op.setParamsAttr(accelParams);
   int64_t waveSize = rock::lookupArchInfo(op.getArchAttr()).waveSize;
   int64_t blockSize = waveSize * accelParams.getNPerBlock() *

@@ -31,7 +31,9 @@
 #include "mlir/Dialect/Rock/IR/WmmaInsnGroup.h"
 #include "mlir/Dialect/Rock/utility/builderUtils.h"
 #include "mlir/Dialect/Rock/utility/loweringUtils.h"
+#include "mlir/Dialect/Rock/IR/FmaInsnGroup.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
+
 
 #include <memory>
 
@@ -43,6 +45,19 @@ namespace accel {
 // Accelerator parameters used throughout the GEMM lowering pipeline
 //
 struct AccelEmitterParams {
+  //tuning params
+  int64_t kpack;
+  uint32_t blockSize;
+  int64_t kpacksPerBlock;
+  int64_t mPerBlock;
+  int64_t nPerBlock;
+  int64_t mPerThread;
+  int64_t nPerThread;
+  int64_t threadCNumM;
+  int64_t threadCNumN;
+  int64_t kPerThread;
+
+  bool forceUnroll;
   // `mPerAccel`/`nPerAccel` represent how many rows an accelerator intrinsic
   // will compute, while mRepeats and nRepeats represent how many times a given
   // wave needs to iterate to compute the `mPerWave` x `nPerWave` tile. E.g., if
@@ -67,7 +82,13 @@ struct AccelEmitterParams {
 
   Type argTypeA;            // Type of the arguments (might be scalar or vector)
   Type argTypeB;            // Type of the arguments (might be scalar or vector)
-  VectorType accVectorType; // Accumulator vector type (always vector type)
+  Type accType;
+  VectorType accVectorType; // Accumulator vector type (always vector type) ;---; ??? scalar for non-accel?
+  Type destType;
+
+  int64_t nOutputVectors;
+  bool useIndexDiffs;
+  bool non_useIndexDiffs;
 
   // Each workitem invoking an accelerator receives as a result a given number
   // of elements stored in VGPR
@@ -192,6 +213,38 @@ private:
   // Specifc wmma parameters
   WmmaInsn wmmaInsn;
 };
+
+// Accel emitter implementation for fma
+
+struct FmaEmitter : public AccelEmitter {
+
+  FmaEmitter(FmaInsn fmaInsn, StringRef arch,
+             RockAccelTuningParamAttrInterface tuningParams);
+
+  void emitThreadwiseLoop(OpBuilder &b, Location loc, Value argA, Value argB,
+              Value bufferC, ValueRange regCOffset) override;
+
+  virtual Value wrapLDSBufferForLoad(OpBuilder &b, Location loc, Value buffer,
+                                     int64_t blockSize,
+                                     int64_t dInCopyPerThread, StringRef dName,
+                                     bool rotateDWithK) const override;
+
+  RegsAsMatrixSubTiles computeOutputTransforms(
+      PatternRewriter &b, Location loc, int64_t mLen, int64_t nLen,
+      int64_t blockSize, ArrayRef<int64_t> bidGridLengths, int64_t inMPerThread,
+      int64_t inNPerThread, bool doSwapThreadIterSubDimsForM = false,
+      bool doSwapThreadIterSubDimsForN = false) override;
+
+private: 
+  // Initialize the emitter parameters for fma 
+  AccelEmitterParams
+  initAccelEmitterParams(FmaInsn fmaInsn,
+                         RockAccelTuningParamAttrInterface tuningParams);
+
+  // Specific fma parameters
+  FmaInsn fmaInsn;
+};
+
 } // namespace accel
 } // namespace rock
 } // namespace mlir

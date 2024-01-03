@@ -174,10 +174,12 @@ struct VectorizationData {
   }
 
   const std::optional<VectorizationInfo> &operator[](uint32_t idx) const {
+    llvm::outs() << "*\nDEBUG: " << idx <<"\n";
     return data[idx];
   }
 
   void debugPrint() {
+    llvm::outs() << "\nVectorised data size: " << data.size() << "\n";
     for (size_t i = 0, e = data.size(); i < e; ++i) {
       if (data[i].has_value())
         LLVM_DEBUG(llvm::dbgs() << *data[i]);
@@ -462,6 +464,7 @@ ContiguousMergesMap findContiguousGroups(ArrayAttr transforms,
 static VectorizationData
 propagateVectorizationInfo(TransformMapAttr map, const VectorizationData &input,
                            ContiguousMergesMap &contiguousMerges) {
+
   VectorizationData result;
   result.grow(map.getMap().getValue().getNumResults());
   for (TransformAttr transform : map.getOps()) {
@@ -469,11 +472,27 @@ propagateVectorizationInfo(TransformMapAttr map, const VectorizationData &input,
     ArrayRef<uint32_t> lowerDims = transform.getLowerDims();
     ArrayRef<int64_t> params = transform.getParams();
 
+    llvm::outs() << "\n##### DEBUG VECTORIZATION #####\n\n"
+                 << "\nTransform: \n"
+                 << transform << "\n"
+                 << "Transform type: \n"
+                 << transform.getType() << "\n";
+    VectorizationData jaganjac = input;
+
     switch (transform.getType()) {
     case TransformType::PassThrough:
     case TransformType::AddDim:
     case TransformType::ConstDim:
       for (auto pair : llvm::zip(upperDims, lowerDims)) {
+          llvm::outs() << "\nupperDims: \n";
+        for(const auto &element : upperDims) {
+          llvm::outs() << element <<"\n";
+          }
+        llvm::outs() << "\nloverDims: \n";
+          for(const auto &element : upperDims) {
+            llvm::outs() << element <<"\n";
+          }
+        jaganjac.debugPrint();
         result[std::get<1>(pair)] = input[std::get<0>(pair)];
       }
       break;
@@ -746,6 +765,7 @@ propagateVectorizationInfo(TransformMapAttr map, const VectorizationData &input,
     }
     }
   }
+  llvm::outs() << "\n\n --------------- PROPAGATE VECTORISATION INFO **FINISH** ---------------\n\n";
   return result;
 }
 
@@ -753,27 +773,33 @@ int64_t mlir::rock::getMaxVectorization(ArrayAttr transforms, uint32_t dim,
                                         int64_t len,
                                         ArrayRef<int64_t> outputShape,
                                         int64_t implicitStride) {
+  llvm::outs() << "\n-----------------getMaxVectorization-------------------\n";
+  llvm::outs() << "\n TRANSFORMS:\n" << transforms <<"\n";
+  llvm::outs() << "\n" <<"DIM: "<< dim << "\n";
   int64_t numInitialDims = transforms.empty() ? outputShape.size()
                                               : transforms[0]
                                                     .cast<TransformMapAttr>()
                                                     .getMap()
                                                     .getValue()
                                                     .getNumInputs();
+  llvm::outs() << "\n" <<"numInitialDims: "<< numInitialDims << "\n";
   VectorizationData data;
   auto contiguousMerges = findContiguousGroups(transforms, outputShape);
   // grow() takes the last index, not the length
   data.grow(numInitialDims);
   data[dim] = VectorizationInfo(/*maxLength=*/len, /*needsCoefficient=*/1,
                                 /*alignment=*/len);
+    llvm::outs() << "\n-----------------FOO TRANSFORMS------------------\n";
   for (auto transformMap : transforms.getAsRange<TransformMapAttr>()) {
     LLVM_DEBUG(llvm::dbgs() << "Max vectorization data: ");
     data.debugPrint();
     LLVM_DEBUG(llvm::dbgs() << "Processing: " << transformMap << "\n");
+    llvm::outs()<<"\n"<< "Transform map: " << transformMap << "\n\n";
     data = propagateVectorizationInfo(transformMap, data, contiguousMerges);
   }
+  llvm::outs() << "\n-----------------AFTER FOR------------------\n";
   LLVM_DEBUG(llvm::dbgs() << "Final max vectorization data: ");
   data.debugPrint();
-
   LLVM_DEBUG(llvm::dbgs() << "Vectorization output shape: ");
   LLVM_DEBUG(llvm::interleaveComma(outputShape, llvm::dbgs()));
   LLVM_DEBUG(llvm::dbgs() << "\n");
@@ -782,6 +808,7 @@ int64_t mlir::rock::getMaxVectorization(ArrayAttr transforms, uint32_t dim,
                     llvm::iota_range<uint32_t>(0, outputShape.size(), false)),
                 llvm::reverse(outputShape)),
       data, implicitStride);
+      
   int64_t result = 1;
   if (finalUnmerge.has_value())
     LLVM_DEBUG(llvm::dbgs() << "Final unmerge: " << *finalUnmerge << "\n");
@@ -797,7 +824,7 @@ int64_t mlir::rock::getMaxVectorization(ArrayAttr transforms, uint32_t dim,
 int64_t mlir::rock::getMaxVectorizationForDatatype(
     ArrayAttr transforms, uint32_t dim, int64_t len,
     ArrayRef<int64_t> outputShape, Type dataType, int64_t implicitStride) {
-
+    llvm::outs() << "\n------------------in getMaxVectorizationForDatatype------------------\n";
   // Get the number of continuous elements that could be read at once
   int64_t theoreticalVectorLen =
       getMaxVectorization(transforms, dim, len, outputShape, implicitStride);

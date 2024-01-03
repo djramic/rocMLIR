@@ -60,6 +60,7 @@ FailureOr<WmmaInsn> WmmaInsn::select(mlir::Type elementTypeA,
   VectorType argTypeA = VectorType::get({inputLen}, elementTypeA);
   VectorType argTypeB = VectorType::get({inputLen}, elementTypeB);
   VectorType retType = VectorType::get({outLen}, getRetType(elementTypeA));
+  Type destType = getRetType(elementTypeA);
 
   StringRef insn;
   if (elementTypeA.isF16()) {
@@ -73,5 +74,5 @@ FailureOr<WmmaInsn> WmmaInsn::select(mlir::Type elementTypeA,
   }
 
   return WmmaInsn{insn,     inputLen, outLen,   outStride, mRepeats,
-                  nRepeats, argTypeA, argTypeB, retType};
+                  nRepeats, argTypeA, argTypeB, retType, destType};
 }

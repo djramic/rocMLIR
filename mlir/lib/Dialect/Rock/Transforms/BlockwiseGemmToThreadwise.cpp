@@ -400,12 +400,10 @@ struct BlockwiseGemmAccelRewritePattern
                                 BlockwiseGemmAccelOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
     Location loc = op.getLoc();
+    llvm::outs() << "----------------------------------\n";
+    llvm::outs() << "\nDEBUG: In Blockwise accel lowering\n";
 
-    StringAttr arch = op.getArchAttr();
-    RockAccelTuningParamAttrInterface tuningParams = op.getParams();
-    int64_t kpackPerBlock = tuningParams.getKpackPerBlock();
-    int64_t mPerWave = tuningParams.getMPerWave();
-    int64_t nPerWave = tuningParams.getNPerWave();
+    RockAccelTuningParamAttrInterface params = op.getParams();
 
     Type bufferElemTypeA =
         adaptor.getMatrixA().getType().cast<MemRefType>().getElementType();
@@ -417,79 +415,86 @@ struct BlockwiseGemmAccelRewritePattern
     if (auto bufferVecTypeB = bufferElemTypeB.dyn_cast<VectorType>())
       dataTypeB = bufferVecTypeB.getElementType();
 
-    auto accelEmitterPtr = rock::accel::AccelEmitter::select(
-        op.getFeatures(), dataTypeA, dataTypeB, arch, tuningParams);
+    llvm::outs() << "\ndataTypeA: " << dataTypeA << "\n";
+    llvm::outs() << "\ndataTypeB: " << dataTypeB << "\n";
 
-    if (!accelEmitterPtr)
-      return op.emitOpError("Unable to emit accelerator code.");
+    auto accelEmitterPtr = rock::accel::AccelEmitter::select(
+        op.getFeatures(), dataTypeA, dataTypeB, op.getArchAttr(), params);
+
+    rock::accel::AccelEmitterParams acparams = accelEmitterPtr->getParams();
+
+
+    StringAttr arch = op.getArchAttr();
+
+
+    llvm::outs() << "\n-----" << bufferElemTypeA << "-----\n";
+    llvm::outs() << "\n-----" << bufferElemTypeB << "-----\n";
+    // llvm::outs()<<"\n-----" <<bufferCType << "-----\n";
+    llvm::outs() << "\n-----------------------------\n";
 
     // Extract relevant accelerator parameters
-    rock::accel::AccelEmitterParams params = accelEmitterPtr->getParams();
-    Type argTypeA = params.argTypeA;
-    Type argTypeB = params.argTypeB;
-    int64_t mRepeats = params.mRepeats;
-    int64_t nRepeats = params.nRepeats;
-    int64_t kBase = params.kBase;
-    int64_t kBasePerThread = params.kBasePerThread;
+    Type argTypeA = acparams.argTypeA;
+    Type argTypeB = acparams.argTypeB;
+    int64_t mRepeats = acparams.mRepeats;
+    int64_t nRepeats = acparams.nRepeats;
+    int64_t kBase = acparams.kBase;
+    int64_t kBasePerThread = acparams.kBasePerThread;
 
     auto tid = b.create<WorkitemIdOp>(loc, b.getIndexType());
 
-    LLVM_DEBUG(llvm::dbgs()
-               << "argVectorType A: " << argTypeA << "\n"
-               << "argVectorType B: " << argTypeB << "\n"
-               << "k_base: " << kBase << "\n"
-               << "mPerWave: " << mPerWave << "\n"
-               << "nPerWave: " << nPerWave << "\n"
-               << "mRepeat: " << mRepeats << "\n"
-               << "nRepeat: " << nRepeats << "\n"
-               << "kpackPerBlock: " << kpackPerBlock << "\n"
-               << "bufferA type: " << adaptor.getBufferA().getType() << "\n"
-               << "bufferB type: " << adaptor.getBufferB().getType() << "\n");
+      // The following loop nest hardcodes the following loop schedule:
+      //
+      // for(index_t m_i = 0; m_i < mRepeats; ++m_i)
+      //   regsA = threadwise_readinto[m_i, :]
+      //   for(index_t n_i = 0; n_i<nRepeats; ++n_i)
+      //       regsB = threadwise_readint[n_i, :]
+      //       threadwise_gemm(regsA, regsB)
+      //
+      // Which mimics:
+      // https://github.com/ROCmSoftwarePlatform/composable_kernel/blob/develop/include/ck/tensor_operation/gpu/block/blockwise_gemm_xdlops.hpp#L304
+      //
+      // Please note that different schedules might exist, so this can be
+      // considered a temporary hack until we have a proper way of "searching"
+      // through different schedules (either heuristically or automatically)
+      
+      
+      Value wrappedLDSBufferForLoadA = accelEmitterPtr->wrapLDSBufferForLoad(
+          b, loc, op.getMatrixA(), op.getBlockSize(), op.getInMPerThread(), "m",
+          op.getRotateMWithK());
+      Value wrappedLDSBufferForLoadB = accelEmitterPtr->wrapLDSBufferForLoad(
+          b, loc, op.getMatrixB(), op.getBlockSize(), op.getInNPerThread(), "n",
+          op.getRotateNWithK());
 
-    // The following loop nest hardcodes the following loop schedule:
-    //
-    // for(index_t m_i = 0; m_i < mRepeats; ++m_i)
-    //   regsA = threadwise_readinto[m_i, :]
-    //   for(index_t n_i = 0; n_i<nRepeats; ++n_i)
-    //       regsB = threadwise_readint[n_i, :]
-    //       threadwise_gemm(regsA, regsB)
-    //
-    // Which mimics:
-    // https://github.com/ROCmSoftwarePlatform/composable_kernel/blob/develop/include/ck/tensor_operation/gpu/block/blockwise_gemm_xdlops.hpp#L304
-    //
-    // Please note that different schedules might exist, so this can be
-    // considered a temporary hack until we have a proper way of "searching"
-    // through different schedules (either heuristically or automatically)
+      llvm::outs() << "\nwrappedLDSBufferForLoadA: \n"
+                   << wrappedLDSBufferForLoadA << "\n";
 
-    Value wrappedLDSBufferForLoadA = accelEmitterPtr->wrapLDSBufferForLoad(
-        b, loc, op.getMatrixA(), op.getBlockSize(), op.getInMPerThread(), "m",
-        op.getRotateMWithK());
-    Value wrappedLDSBufferForLoadB = accelEmitterPtr->wrapLDSBufferForLoad(
-        b, loc, op.getMatrixB(), op.getBlockSize(), op.getInNPerThread(), "n",
-        op.getRotateNWithK());
+      llvm::outs() << "\nwrappedLDSBufferForLoadB: \n"
+                   << wrappedLDSBufferForLoadB << "\n";
 
-    auto mLoop = b.create<affine::AffineForOp>(loc, 0, mRepeats);
-    {
-      OpBuilder::InsertionGuard guard(b);
-      b.setInsertionPointToStart(mLoop.getBody());
-      Value m_i = mLoop.getInductionVar();
+      llvm::outs() << "\nsoruce dimension: " << "\n"
+                   << op.getBufferA().getType().getShape().size() << "\n"; 
 
-      // regsA = read A from LDS
-      b.create<ThreadwiseReadIntoOp>(loc, wrappedLDSBufferForLoadA,
-                                     op.getBufferA(), b.getArrayAttr({}),
-                                     ValueRange{tid, m_i}, true, true);
 
-      auto nLoop = b.create<affine::AffineForOp>(loc, 0, nRepeats);
+      auto mLoop = b.create<affine::AffineForOp>(loc, 0, mRepeats);
       {
         OpBuilder::InsertionGuard guard(b);
-        b.setInsertionPointToStart(nLoop.getBody());
-        Value n_i = nLoop.getInductionVar();
+        b.setInsertionPointToStart(mLoop.getBody());
+        Value m_i = mLoop.getInductionVar();
 
-        // regsB = read B from LDS
-        b.create<ThreadwiseReadIntoOp>(loc, wrappedLDSBufferForLoadB,
-                                       op.getBufferB(), b.getArrayAttr({}),
-                                       ValueRange{tid, n_i}, true, true);
+        // regsA = read A from LDS
+        b.create<ThreadwiseReadIntoOp>(loc, wrappedLDSBufferForLoadA,
+                                       op.getBufferA(), b.getArrayAttr({}),
+                                       ValueRange{tid, m_i}, true, true);
 
+        auto nLoop = b.create<affine::AffineForOp>(loc, 0, nRepeats);
+        {
+          OpBuilder::InsertionGuard guard(b);
+          b.setInsertionPointToStart(nLoop.getBody());
+          Value n_i = nLoop.getInductionVar();
+          // regsB = read B from LDS
+          b.create<ThreadwiseReadIntoOp>(loc, wrappedLDSBufferForLoadB,
+                                         op.getBufferB(), b.getArrayAttr({}),
+                                         ValueRange{tid, n_i}, true, true);
         // A view: A buffer is [0, K] so we can ignore `i`
         TopDownTMBuilder bufferAikTransform(b, {"i", "k"}, {1, kBasePerThread},
                                             loc);
@@ -524,7 +529,7 @@ struct BlockwiseGemmAccelRewritePattern
         // regsC += regsA * regsB
         b.create<ThreadwiseAccelGemmOp>(loc, bufferA, bufferB, bufferC,
                                         ValueRange{m_i, n_i}, arch,
-                                        op.getFeaturesAttr(), tuningParams);
+                                        op.getFeaturesAttr(), op.getParams());
       }
     }
     b.eraseOp(op);

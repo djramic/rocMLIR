@@ -49,37 +49,6 @@ def RockAccelTuningParamAttrInterface : AttrInterface<"RockAccelTuningParamAttrI
         /*args=*/(ins),
         /*methodBody=*/"",
         /*defaultImplementation=*/""
-      >,
-    InterfaceMethod<
-        /*desc=*/[{
-          Given that the GEMM input blocks layout is `[kOuter, dPerBlock, kPack]` (where `d` can be `m` or `n`)
-          this method returns `kOuter`.
-        }],
-        /*retType=*/"int64_t",
-        /*methodName=*/"getKpackPerBlock",
-        /*args=*/(ins),
-        /*methodBody=*/"",
-        /*defaultImplementation=*/""
-      >,
-    InterfaceMethod<
-        /*desc=*/[{
-          Return how many output rows each wave computes.
-        }],
-        /*retType=*/"int64_t",
-        /*methodName=*/"getMPerWave",
-        /*args=*/(ins),
-        /*methodBody=*/"",
-        /*defaultImplementation=*/""
-      >,
-    InterfaceMethod<
-        /*desc=*/[{
-          Return how many output columns each wave computes.
-        }],
-        /*retType=*/"int64_t",
-        /*methodName=*/"getNPerWave",
-        /*args=*/(ins),
-        /*methodBody=*/"",
-        /*defaultImplementation=*/""
       >
 
     // TODO: more methods here as needed

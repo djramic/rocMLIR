@@ -8,6 +8,7 @@ add_rocmlir_dialect_library(MLIRRockOps
   RockAccelTuningParamAttrInterface.cpp
   RockAcceptingViewOpInterface.cpp
   RockWriterOpInterface.cpp
+  FmaInsnGroup.cpp
   MfmaInsnGroup.cpp
   WmmaInsnGroup.cpp
 

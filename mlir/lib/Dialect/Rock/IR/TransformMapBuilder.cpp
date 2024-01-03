@@ -783,12 +783,18 @@ void BottomUpTMBuilder::unmerge(ArrayRef<StringRef> upperNames,
          "One length needed per upper dimension in unmerge");
 
   uint32_t lowerDim = startIndex(lowerName);
-
+  llvm::outs() << "\nDEBUG TRANSFORM MAP:\n"
+               << "lowerDim" << lowerDim<< "\n";
   int64_t totalLength = startSize(lowerDim);
+  llvm::outs() << "\nDEBUG TRANSFORM MAP:\n"
+               << "totalLength" << totalLength<< "\n";
   int64_t lengthsProd = 1;
   for (int64_t length : lengths) {
     lengthsProd *= length;
   }
+  llvm::outs() << "----DEBUG UNMERGE:\n"
+               << "lengthsProd" << lengthsProd <<"\n"
+               << "totalLength" << totalLength <<"\n";
   assert(lengthsProd == totalLength &&
          "failed to partition unmerge length among upper dimensions");
 

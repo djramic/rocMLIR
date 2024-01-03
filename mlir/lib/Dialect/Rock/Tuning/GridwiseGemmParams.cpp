@@ -112,8 +112,9 @@ std::optional<GemmSize> mlir::rock::requiredPadding(Attribute params,
     kPerBlock = generalParams.getKPerBlock();
     mPerBlock = generalParams.getMPerBlock();
     nPerBlock = generalParams.getNPerBlock();
-  } else if (auto accelParams =
+  } else if (auto RawAccelParams =
                  params.dyn_cast<RockAccelTuningParamAttrInterface>()) {
+    auto accelParams = RawAccelParams.dyn_cast<WmmaGemmParamsAttr>();
     kPerBlock = accelParams.getKpackPerBlock();
     mPerBlock = accelParams.getMPerBlock();
     nPerBlock = accelParams.getNPerBlock();

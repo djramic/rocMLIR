@@ -1,4 +1,4 @@
-//===- WmmaInsnGroup.h - MLIR to C++ for Rock conversion
+//===- FmaInsnGroup.h - MLIR to C++ for Rock conversion
 //---------------===//
 //
 // Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -7,12 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-// This file implements code selection logic for Wmma instructions.
+// This file implements code selection logic for Fma instructions.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLIR_WMMA_INSN_GROUP_H
-#define MLIR_WMMA_INSN_GROUP_H
+#ifndef MLIR_FMA_INSN_GROUP_H
+#define MLIR_FMA_INSN_GROUP_H
 
 #include "mlir/Dialect/AMDGPU/IR/AMDGPUDialect.h"
 #include "llvm/ADT/DenseMap.h"
@@ -22,25 +22,20 @@
 namespace mlir {
 namespace rock {
 
-struct WmmaInsn {
-  StringRef insn;
-  int64_t inputLen;
-  int64_t outputLen;
-  int64_t outputStride;
-  int64_t mRepeats;
-  int64_t nRepeats;
+struct FmaInsn {
   VectorType argTypeA;
   VectorType argTypeB;
-  VectorType retType;
-  Type destType;
+  Type retType;
+  int64_t kPerThraed;
+  int64_t inputLen = 16;
 
-public:
-  bool isCoherentWithK(int64_t kpack, int64_t kPerBlock);
-  static FailureOr<WmmaInsn> select(Type elementTypeA, Type elementTypeB,
-                                    int64_t waveSize, int64_t mPerWave,
-                                    int64_t nPerWave);
+  public:
+    static FailureOr<FmaInsn> select(Type elementTypeA, Type elementTypeB, StringRef arch);
 };
+
+
+
 } // namespace rock
 } // namespace mlir
 
-#endif // MLIR_WMMA_INSN_GROUP_H
+#endif // MLIR_FMA_INSN_GROUP_H
