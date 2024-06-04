@@ -1760,6 +1760,25 @@ LogicalResult ThreadwiseGemmOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ThreadwiseGemmOpv2
+//===----------------------------------------------------------------------===//
+LogicalResult ThreadwiseGemmOpv2::verify() {
+  // ArrayRef<int64_t> aShape = getMatrixA().getType().getShape(),
+  //                   bShape = getMatrixB().getType().getShape(),
+  //                   cShape = getMatrixC().getType().getShape();
+
+  // if (aShape[0] != bShape[0])
+  //   return emitOpError("K dimensions don't match");
+  // if (aShape[1] != cShape[0])
+  //   return emitOpError("M dimensions don't match");
+  // if (bShape[1] != cShape[1])
+  //   return emitOpError("N dimensions don't match");
+  // if (aShape[2] != bShape[2])
+  //   return emitOpError("KPack dimensions don't match");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ThreadwiseAccelGemmOp
 //===----------------------------------------------------------------------===//
 LogicalResult ThreadwiseAccelGemmOp::verify() {

@@ -187,7 +187,7 @@ struct BlockwiseGemmRewritePattern
     int64_t mC = bufferCType.getShape()[0];
     int64_t nC = bufferCType.getShape()[1];
 
-    GeneralGemmParamsAttr params = op.getParams();
+    GeneralGemmParamsAttr params = op.getParams().cast<GeneralGemmParamsAttr>();
     uint32_t blockSize = params.getBlockSize();
     int64_t kPerThread = params.getKPerThread();
     int64_t mPerThread = params.getMPerThread();
@@ -312,7 +312,7 @@ struct BlockwiseGemmRewritePattern
         MemRefType::get(threadANumRegisters, elementType, AffineMap{},
                         privateMemoryAddressSpace);
     auto threadAAllocOp = b.create<GpuAllocOp>(loc, threadARegisterMemRefType);
-
+    
     auto threadBRegisterMemRefType =
         MemRefType::get(threadBNumRegisters, elementType, AffineMap{},
                         privateMemoryAddressSpace);
@@ -350,6 +350,7 @@ struct BlockwiseGemmRewritePattern
         ArrayRef<Attribute>{transformsA, b.getArrayAttr(threadACopyViewAttr)},
         ArrayRef<int64_t>{kPerThread, mRepeat, 1, mPerThread, kPack},
         /*strides=*/std::nullopt, /*forceUnroll=*/true, /*indexDiffs=*/true);
+
     {
       OpBuilder::InsertionGuard copyAGuard(b);
       b.setInsertionPointToStart(copyALoop.getBody());
@@ -381,9 +382,10 @@ struct BlockwiseGemmRewritePattern
         b, loc, threadAAllocOp, {"k", "m", "kpack"}, {kPerThread, mC, kPack});
     Value reshapedBRegisters = reshapeBuffer(
         b, loc, threadBAllocOp, {"k", "n", "kpack"}, {kPerThread, nC, kPack});
+
     // Actually do the gemm - this goes inside the look over kOffset
-    b.create<ThreadwiseGemmOp>(loc, reshapedARegisters, reshapedBRegisters,
-                               op.getMatrixC());
+    b.create<ThreadwiseGemmOpv2>(loc, reshapedARegisters, reshapedBRegisters, op.getMatrixC(), 
+                                 ValueRange{zeroConstantOp,zeroConstantOp,zeroConstantOp,zeroConstantOp}, op.getArchAttr(), op.getFeaturesAttr(), op.getParamsAttr());
 
     return success();
   }
@@ -402,7 +404,7 @@ struct BlockwiseGemmAccelRewritePattern
     Location loc = op.getLoc();
 
     StringAttr arch = op.getArchAttr();
-    RockAccelTuningParamAttrInterface tuningParams = op.getParams();
+    RockAccelTuningParamAttrInterface tuningParams = op.getParams().cast<RockAccelTuningParamAttrInterface>();
     int64_t kpackPerBlock = tuningParams.getKpackPerBlock();
     int64_t mPerWave = tuningParams.getMPerWave();
     int64_t nPerWave = tuningParams.getNPerWave();
@@ -503,7 +505,8 @@ struct BlockwiseGemmAccelRewritePattern
           Value viewC = accelEmitterPtr->generateThreadwiseViewBufferC(
               b, loc, adaptor.getMatrixC());
           Value k = kLoop.getInductionVar();
-          b.create<ThreadwiseAccelGemmOp>(loc, viewA, viewB, viewC,
+
+          b.create<ThreadwiseGemmOpv2>(loc, viewA, viewB, viewC,
                                           ValueRange{i, j, k}, arch,
                                           op.getFeaturesAttr(), tuningParams);
         }
