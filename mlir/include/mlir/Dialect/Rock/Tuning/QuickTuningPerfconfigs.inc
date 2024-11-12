@@ -24,26 +24,30 @@ const InitParamsNonAccel PopulateParams::initParametersGemm[PopulateParams::nIni
 
 // BEGIN_CONV_NonAccel_f32_DEFS
 const InitParamsNonAccel PopulateParams::initParametersConv[PopulateParams::nInitParametersConv] = {
-    {128,128,128,8,4,2,1},
-    {64,32,32,16,4,4,1},
-    {128,64,32,16,4,4,1},
-    {64,32,32,8,2,4,1},
-    {64,64,32,16,4,2,1},
-    {64,128,64,16,2,4,1},
-    {128,128,128,16,2,2,1},
-    {64,64,64,8,2,2,1},
-    {128,32,32,16,2,2,1},
-    {64,128,64,16,2,2,1},
-    {128,64,128,4,2,2,1},
-    {128,32,128,4,2,4,1},
-    {128,32,64,8,2,4,1},
-    {64,64,32,8,2,2,1},
-    {128,32,64,4,2,2,1},
-    {256,128,128,8,4,2,1},
-    {64,128,32,16,2,2,1},
+    {128,128,32,16,2,4,1},
+    {64,64,128,16,2,2,1},
     {64,128,32,8,2,2,1},
+    {128,32,32,16,2,2,1},
+    {64,64,128,16,4,4,1},
+    {64,32,64,4,2,2,1},
+    {64,128,64,16,2,4,1},
+    {64,32,64,8,2,2,1},
+    {128,32,64,8,2,2,1},
     {256,32,32,16,2,2,1},
-    {128,128,128,4,2,4,1}
+    {64,32,32,16,4,4,1},
+    {64,64,128,4,4,4,1},
+    {128,128,128,4,2,4,1},
+    {128,64,32,16,2,2,1},
+    {64,128,64,16,4,2,1},
+    {256,128,128,8,2,4,1},
+    {64,32,32,8,2,4,1},
+    {128,64,32,4,2,2,1},
+    {128,128,64,4,2,2,1},
+    {128,128,128,16,2,4,1},
+    {64,128,32,16,2,4,1},
+    {64,64,32,8,2,2,1},
+    {64,64,64,16,2,4,1},
+    {64,32,128,8,2,4,1}
 };
 // END_CONV_NonAccel_f32_DEFS
 
@@ -57,7 +61,7 @@ static const InitParamsNonAccel initParametersGemm[nInitParametersGemm];
 // END_GEMM_NonAccel_f32_DECS
 
 // BEGIN_CONV_NonAccel_f32_DECS
-static constexpr size_t nInitParametersConv = 20;
+static constexpr size_t nInitParametersConv = 24;
 static const InitParamsNonAccel initParametersConv[nInitParametersConv];
 // END_CONV_NonAccel_f32_DECS
 
@@ -255,28 +259,32 @@ const InitParamsAccel PopulateParamsWmma::initParametersFp16Gemm[PopulateParamsW
 
 // BEGIN_CONV_Wmma_f16_DEFS
 const InitParamsAccel PopulateParamsWmma::initParametersFp16Conv[PopulateParamsWmma::nInitParametersFp16Conv] = {
-    {128,64,4,64,64,8,1,true,true},
-    {64,256,2,64,64,8,1,true,true},
-    {128,128,2,32,32,8,1,true,true},
-    {128,64,8,32,64,8,1,true,true},
-    {128,32,2,32,32,8,1,true,true},
-    {64,16,8,16,16,8,1,true,true},
-    {128,128,4,32,64,8,1,true,true},
-    {256,64,8,64,32,8,1,true,true},
-    {256,256,8,32,64,8,1,true,true},
-    {128,64,2,64,64,8,1,true,true},
-    {16,32,4,16,16,16,1,true,true},
-    {64,32,8,64,16,8,1,true,true},
-    {128,256,4,128,32,8,1,true,true},
-    {128,16,8,32,16,8,1,true,true},
     {16,16,4,16,16,8,1,true,true},
+    {256,128,8,128,32,8,1,true,true},
+    {256,64,2,64,64,8,1,true,true},
+    {64,64,4,32,32,8,1,true,true},
+    {128,128,2,32,32,8,1,true,true},
+    {64,16,8,16,16,16,1,true,true},
+    {128,64,8,32,64,8,1,true,true},
+    {256,256,8,64,32,8,1,true,true},
+    {64,128,8,64,32,8,1,true,true},
+    {128,64,2,64,32,8,1,true,true},
     {128,256,2,64,32,8,1,true,true},
     {16,16,8,16,16,8,1,true,true},
-    {256,64,4,32,64,8,1,true,true},
+    {128,32,2,32,32,8,1,true,true},
+    {128,256,8,128,32,8,1,true,true},
+    {32,128,2,32,32,8,1,true,true},
+    {64,256,4,32,64,8,1,true,true},
+    {64,32,8,32,32,8,1,true,true},
+    {64,256,2,64,64,8,1,true,true},
+    {16,32,4,16,16,16,1,true,true},
     {16,32,4,16,32,8,1,true,true},
+    {64,16,8,16,16,8,1,true,true},
+    {256,128,4,32,64,8,1,true,true},
+    {128,256,4,64,32,8,1,true,true},
+    {128,128,4,64,64,8,1,true,true},
     {16,128,8,16,16,8,1,true,true},
-    {64,16,8,16,16,16,1,true,true},
-    {256,128,8,32,32,8,1,true,true}
+    {128,16,8,32,16,8,1,true,true}
 };
 // END_CONV_Wmma_f16_DEFS
 
@@ -303,14 +311,15 @@ const InitParamsAccel PopulateParamsWmma::initParametersForward8BitGemm[Populate
 // BEGIN_CONV_Wmma_i8_DEFS
 const InitParamsAccel PopulateParamsWmma::initParametersForward8BitConv[PopulateParamsWmma::nInitParametersForward8BitConv] = {
     {128,64,8,32,64,16,1,true,true},
-    {128,128,8,16,128,8,1,true,true},
-    {64,256,4,64,32,16,1,true,true},
-    {256,32,8,64,32,16,1,true,true},
-    {128,16,8,32,16,16,1,true,true},
-    {128,128,8,16,32,4,1,true,true},
-    {128,64,4,32,32,4,1,true,true},
-    {64,256,8,32,64,16,1,true,true},
-    {16,128,4,16,16,16,1,true,true},
+    {32,64,4,32,32,16,1,true,true},
+    {64,64,4,64,16,16,1,true,true},
+    {256,64,8,32,64,16,1,true,true},
+    {128,32,4,64,16,16,1,true,true},
+    {256,32,8,32,16,4,1,true,true},
+    {32,256,4,32,16,4,1,true,true},
+    {128,128,4,128,16,16,1,true,true},
+    {64,16,8,32,16,16,1,true,true},
+    {128,128,2,128,32,16,1,true,true},
     {256,128,2,32,128,16,1,true,true}
 };
 // END_CONV_Wmma_i8_DEFS
@@ -325,7 +334,7 @@ static const InitParamsAccel initParametersFp16Gemm[nInitParametersFp16Gemm];
 // END_GEMM_Wmma_f16_DECS
 
 // BEGIN_CONV_Wmma_f16_DECS
-static constexpr size_t nInitParametersFp16Conv = 22;
+static constexpr size_t nInitParametersFp16Conv = 26;
 static const InitParamsAccel initParametersFp16Conv[nInitParametersFp16Conv];
 // END_CONV_Wmma_f16_DECS
 
@@ -335,7 +344,7 @@ static const InitParamsAccel initParametersForward8BitGemm[nInitParametersForwar
 // END_GEMM_Wmma_i8_DECS
 
 // BEGIN_CONV_Wmma_i8_DECS
-static constexpr size_t nInitParametersForward8BitConv = 10;
+static constexpr size_t nInitParametersForward8BitConv = 11;
 static const InitParamsAccel initParametersForward8BitConv[nInitParametersForward8BitConv];
 // END_CONV_Wmma_i8_DECS
 
