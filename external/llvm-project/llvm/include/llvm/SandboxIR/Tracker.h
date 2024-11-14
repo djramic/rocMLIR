@@ -64,6 +64,9 @@ class SwitchInst;
 class ConstantInt;
 class ShuffleVectorInst;
 class CmpInst;
+class Module;
+class GlobalVariable;
+
 /// The base class for IR Change classes.
 class IRChangeBase {
 protected:
@@ -312,12 +315,15 @@ public:
 
 class SwitchRemoveCase : public IRChangeBase {
   SwitchInst *Switch;
-  ConstantInt *Val;
-  BasicBlock *Dest;
+  struct Case {
+    ConstantInt *Val;
+    BasicBlock *Dest;
+  };
+  SmallVector<Case> Cases;
 
 public:
-  SwitchRemoveCase(SwitchInst *Switch, ConstantInt *Val, BasicBlock *Dest)
-      : Switch(Switch), Val(Val), Dest(Dest) {}
+  SwitchRemoveCase(SwitchInst *Switch);
+
   void revert(Tracker &Tracker) final;
   void accept() final {}
 #ifndef NDEBUG

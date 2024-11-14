@@ -32,7 +32,7 @@ using namespace mlir;
 
 namespace {
 struct ExtendToSupportedTypesRewritePattern final : ConversionPattern {
-  ExtendToSupportedTypesRewritePattern(TypeConverter &converter,
+  ExtendToSupportedTypesRewritePattern(const TypeConverter &converter,
                                        MLIRContext *context)
       : ConversionPattern(converter, MatchAnyOpTypeTag{}, 1, context) {}
   LogicalResult
@@ -114,7 +114,11 @@ LogicalResult ExtendToSupportedTypesRewritePattern::matchAndRewrite(
 }
 
 void mlir::math::populateExtendToSupportedTypesPatterns(
+<<<<<<< HEAD
     RewritePatternSet &patterns, TypeConverter &typeConverter) {
+=======
+    RewritePatternSet &patterns, const TypeConverter &typeConverter) {
+>>>>>>> 4ce26eec0274a238c2ba5c71883d6a50aaf3ed48
   patterns.add<ExtendToSupportedTypesRewritePattern>(typeConverter,
                                                      patterns.getContext());
 }

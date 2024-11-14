@@ -4,11 +4,23 @@
 cmake_minimum_required(VERSION 3.20.0)
 set(LLVM_SUBPROJECT_TITLE "liboffload")
 
+if(DEFINED LIBOMP_SHARED_LINKER_FLAGS)
+  set(CMAKE_SHARED_LINKER_FLAGS "${LIBOMP_SHARED_LINKER_FLAGS}")
+endif()
+
+if(DEFINED LIBOMP_INSTALL_RPATH)
+  set(CMAKE_INSTALL_RPATH "${LIBOMP_INSTALL_RPATH}")
+endif()
+
 if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
   set(OPENMP_STANDALONE_BUILD TRUE)
   project(offload C CXX ASM)
 else()
   set(OPENMP_STANDALONE_BUILD FALSE)
+endif()
+
+if(LIBOMPTARGET_NO_SANITIZER_AMDGPU)
+  set(SANITIZER_AMDGPU FALSE)
 endif()
 
 # Check that the library can actually be built.
@@ -89,9 +101,9 @@ else()
 
   # Check for flang
   if (NOT MSVC)
-    set(OPENMP_TEST_Fortran_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/flang-new)
+    set(OPENMP_TEST_Fortran_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/flang)
   else()
-    set(OPENMP_TEST_Fortran_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/flang-new.exe)
+    set(OPENMP_TEST_Fortran_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/flang.exe)
   endif()
 
   # Set fortran test compiler if flang is found
@@ -204,6 +216,8 @@ set (LIBOMPTARGET_ALL_TARGETS "${LIBOMPTARGET_ALL_TARGETS} nvptx64-nvidia-cuda-L
 set (LIBOMPTARGET_ALL_TARGETS "${LIBOMPTARGET_ALL_TARGETS} nvptx64-nvidia-cuda-JIT-LTO")
 set (LIBOMPTARGET_ALL_TARGETS "${LIBOMPTARGET_ALL_TARGETS} s390x-ibm-linux-gnu")
 set (LIBOMPTARGET_ALL_TARGETS "${LIBOMPTARGET_ALL_TARGETS} s390x-ibm-linux-gnu-LTO")
+set (LIBOMPTARGET_ALL_TARGETS "${LIBOMPTARGET_ALL_TARGETS} riscv64-unknown-linux-gnu")
+set (LIBOMPTARGET_ALL_TARGETS "${LIBOMPTARGET_ALL_TARGETS} riscv64-unknown-linux-gnu-LTO")
 
 # Once the plugins for the different targets are validated, they will be added to
 # the list of supported targets in the current system.

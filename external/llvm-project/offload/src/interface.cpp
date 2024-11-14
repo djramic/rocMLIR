@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "OpenMP/OMPT/Interface.h"
-#include "OmptCommonDefs.h"
 #include "OffloadPolicy.h"
 #include "OpenMP/OMPT/Callback.h"
+#include "OpenMP/OMPT/OmptCommonDefs.h"
 #include "OpenMP/omp.h"
 #include "PluginManager.h"
 #include "omptarget.h"
@@ -90,7 +90,6 @@ EXTERN void __tgt_rtl_deinit() { deinitRuntime(); }
 ////////////////////////////////////////////////////////////////////////////////
 /// adds a target shared library to the target execution image
 EXTERN void __tgt_register_lib(__tgt_bin_desc *Desc) {
-  TIMESCOPE();
   initRuntime();
   if (PM->delayRegisterLib(Desc))
     return;

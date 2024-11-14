@@ -502,19 +502,25 @@ if(build_runtimes)
     list(APPEND extra_cmake_args "-DCMAKE_PROGRAM_PATH=${CMAKE_PROGRAM_PATH}")
   endif()
 
-  if("openmp" IN_LIST LLVM_ENABLE_RUNTIMES)
-    if(DEFINED LIBOMPTARGET_EXTERNAL_PROJECT_HSA_PATH AND DEFINED LIBOMPTARGET_EXTERNAL_PROJECT_THUNK_PATH)
+  if("offload" IN_LIST LLVM_ENABLE_RUNTIMES)
+    if(DEFINED LIBOMPTARGET_EXTERNAL_PROJECT_HSA_PATH AND
+       DEFINED LIBOMPTARGET_EXTERNAL_PROJECT_THUNK_PATH AND
+       DEFINED LIBOMPTARGET_EXTERNAL_PROJECT_ROCM_DEVICE_LIBS_PATH)
       ExternalProject_Add(roct
         SOURCE_DIR ${LIBOMPTARGET_EXTERNAL_PROJECT_THUNK_PATH}
         DEPENDS clang llvm-link lld opt llvm-objcopy
         INSTALL_COMMAND ""
-	CMAKE_ARGS -DCMAKE_PREFIX_PATH=${CMAKE_BINARY_DIR}/lib/cmake)
+        CMAKE_ARGS -DCMAKE_PREFIX_PATH=${CMAKE_BINARY_DIR}/lib/cmake)
       ExternalProject_Add(rocr-runtime
         SOURCE_DIR ${LIBOMPTARGET_EXTERNAL_PROJECT_HSA_PATH}
         DEPENDS clang llvm-link lld opt llvm-objcopy roct
         INSTALL_COMMAND ""
-	CMAKE_ARGS -DBUILD_SHARED_LIBS=ON -DCMAKE_PREFIX_PATH=${CMAKE_BINARY_DIR}/lib/cmake -DIMAGE_SUPPORT=OFF -DLLVM_RUNTIME_OPENMP=ON -DHSAKMT_SRC_PATH=${LIBOMPTARGET_EXTERNAL_PROJECT_THUNK_PATH})
+        CMAKE_ARGS -DBUILD_SHARED_LIBS=ON -DCMAKE_PREFIX_PATH=${CMAKE_BINARY_DIR}/lib/cmake -DIMAGE_SUPPORT=OFF -DLLVM_RUNTIME_OPENMP=ON -DHSAKMT_SRC_PATH=${LIBOMPTARGET_EXTERNAL_PROJECT_THUNK_PATH})
         set(HSA_DEP rocr-runtime)
+      ExternalProject_Add(rocm-device-libs
+        SOURCE_DIR ${LIBOMPTARGET_EXTERNAL_PROJECT_ROCM_DEVICE_LIBS_PATH}
+        DEPENDS clang llvm-link lld opt llvm-objcopy
+        CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${ROCM_DEVICE_LIBS_INSTALL_PREFIX_PATH} -DCMAKE_PREFIX_PATH=${CMAKE_BINARY_DIR}/lib/cmake -DROCM_DEVICE_LIBS_BITCODE_INSTALL_LOC_NEW=${ROCM_DEVICE_LIBS_BITCODE_INSTALL_LOC} -DROCM_DEVICE_LIBS_BITCODE_INSTALL_LOC_OLD=amdgcn)
     endif()
     if("AMDGPU" IN_LIST LLVM_TARGETS_TO_BUILD)
       set(AMDGPU_ARCH_DEP amdgpu-arch)
@@ -530,7 +536,10 @@ if(build_runtimes)
       # that all .mod files are also properly build.
       list(APPEND extra_deps "flang-new" "module_files")
     endif()
-    foreach(dep opt llvm-link llvm-extract clang clang-offload-packager rocm-device-libs offload-arch amdgcn_hostexec_services ${HSA_DEP} ${AMDGPU_ARCH_DEP})
+    if (${LIBOMPTARGET_BUILD_DEVICE_FORTRT})
+      set(FORTRT_DEP FortranRuntime)
+    endif()
+    foreach(dep opt llvm-link llvm-extract clang clang-offload-packager rocm-device-libs offload-arch amdgcn_hostexec_services ${HSA_DEP} ${AMDGPU_ARCH_DEP} ${FORTRT_DEP})
       if(TARGET ${dep} AND OPENMP_ENABLE_LIBOMPTARGET)
         list(APPEND extra_deps ${dep})
       endif()
@@ -574,6 +583,9 @@ if(build_runtimes)
     endif()
     if(TARGET clang-offload-packager)
       list(APPEND extra_deps clang-offload-packager)
+    endif()
+    if(TARGET clang-nvlink-wrapper)
+      list(APPEND extra_deps clang-nvlink-wrapper)
     endif()
   endif()
   if(LLVM_LIBC_FULL_BUILD)
@@ -648,6 +660,7 @@ if(build_runtimes)
           CMAKE_ARGS -DLLVM_DEFAULT_TARGET_TRIPLE=${name}
                      -DLLVM_RUNTIMES_PREFIX=${name}/
                      -DLLVM_RUNTIMES_LIBDIR_SUBDIR=${multilib}
+                     ${extra_cmake_args}
           BASE_NAME ${name}
           EXTRA_ARGS TARGET_TRIPLE ${name})
       endforeach()

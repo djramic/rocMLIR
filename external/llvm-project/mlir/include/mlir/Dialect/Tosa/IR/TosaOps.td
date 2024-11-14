@@ -368,7 +368,7 @@ def Tosa_TransposeConv2DOp : Tosa_InferShapedTypeOp<"transpose_conv2d"> {
 //===----------------------------------------------------------------------===//
 // Operator: clamp
 //===----------------------------------------------------------------------===//
-def Tosa_ClampOp : Tosa_ElementwiseOp<"clamp"> {
+def Tosa_ClampOp : Tosa_ElementwiseUnaryOp<"clamp"> {
   let summary = "Computes clamp(features, min, max).";
 
   let description = [{
@@ -398,7 +398,7 @@ def Tosa_ClampOp : Tosa_ElementwiseOp<"clamp"> {
 //===----------------------------------------------------------------------===//
 // Operator: sigmoid
 //===----------------------------------------------------------------------===//
-def Tosa_SigmoidOp : Tosa_ElementwiseOp<"sigmoid"> {
+def Tosa_SigmoidOp : Tosa_ElementwiseUnaryOp<"sigmoid"> {
   let summary = "Computes elementwise sigmoid of input.";
 
   let description = [{
@@ -421,7 +421,7 @@ def Tosa_SigmoidOp : Tosa_ElementwiseOp<"sigmoid"> {
 //===----------------------------------------------------------------------===//
 // Operator: tanh
 //===----------------------------------------------------------------------===//
-def Tosa_TanhOp : Tosa_ElementwiseOp<"tanh", [SameOperandsAndResultElementType]> {
+def Tosa_TanhOp : Tosa_ElementwiseUnaryOp<"tanh"> {
   let summary = "Computes elementwise hyperbolic tangent of input";
 
   let description = [{
@@ -443,10 +443,7 @@ def Tosa_TanhOp : Tosa_ElementwiseOp<"tanh", [SameOperandsAndResultElementType]>
 //===----------------------------------------------------------------------===//
 // Operator: erf
 //===----------------------------------------------------------------------===//
-def Tosa_ErfOp : Tosa_Op<"erf", [
-    DeclareOpInterfaceMethods<InferShapedTypeOpInterface,
-                              ["inferReturnTypeComponents"]>,
-    Pure]> {
+def Tosa_ErfOp : Tosa_ElementwiseUnaryOp<"erf"> {
   let summary = "Computes gauss error function of input";
 
   let description = [{
@@ -812,6 +809,7 @@ def Tosa_MulOp : Tosa_ElementwiseOp<"mul", [
   );
 
   let hasFolder = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -882,7 +880,7 @@ def Tosa_TableOp : Tosa_InferShapedTypeOp<"table"> {
   }];
 
   let arguments = (ins
-    Tosa_Tensor: $input,
+    Tosa_Tensor: $input1,
     Tosa_Tensor1D: $table
   );
 
@@ -891,7 +889,7 @@ def Tosa_TableOp : Tosa_InferShapedTypeOp<"table"> {
   );
 
   let assemblyFormat = [{
-    $input `,` $table attr-dict `:` `(` type($input) `,` type($table) `)` `->` type($output)
+    $input1 `,` $table attr-dict `:` `(` type($input1) `,` type($table) `)` `->` type($output)
   }];
 
   let hasVerifier = 1;
@@ -906,7 +904,7 @@ def Tosa_TableOp : Tosa_InferShapedTypeOp<"table"> {
 //===----------------------------------------------------------------------===//
 // Operator: abs
 //===----------------------------------------------------------------------===//
-def Tosa_AbsOp : Tosa_ElementwiseOp<"abs", [SameOperandsAndResultElementType]> {
+def Tosa_AbsOp : Tosa_ElementwiseUnaryOp<"abs"> {
   let summary = "Elementwise abs op";
 
   let description = [{
@@ -933,8 +931,7 @@ def Tosa_AbsOp : Tosa_ElementwiseOp<"abs", [SameOperandsAndResultElementType]> {
 //===----------------------------------------------------------------------===//
 // Operator: bitwise_not
 //===----------------------------------------------------------------------===//
-def Tosa_BitwiseNotOp : Tosa_ElementwiseOp<"bitwise_not",
-    [SameOperandsAndResultElementType]> {
+def Tosa_BitwiseNotOp : Tosa_ElementwiseUnaryOp<"bitwise_not"> {
   let summary = "Bitwise NOT operator";
 
   let description = [{
@@ -953,7 +950,7 @@ def Tosa_BitwiseNotOp : Tosa_ElementwiseOp<"bitwise_not",
 //===----------------------------------------------------------------------===//
 // Operator: ceil
 //===----------------------------------------------------------------------===//
-def Tosa_CeilOp : Tosa_ElementwiseOp<"ceil", [SameOperandsAndResultElementType]> {
+def Tosa_CeilOp : Tosa_ElementwiseUnaryOp<"ceil"> {
   let summary = "Elementwise ceil op";
 
   let description = [{
@@ -972,7 +969,7 @@ def Tosa_CeilOp : Tosa_ElementwiseOp<"ceil", [SameOperandsAndResultElementType]>
 //===----------------------------------------------------------------------===//
 // Operator: clz
 //===----------------------------------------------------------------------===//
-def Tosa_ClzOp : Tosa_ElementwiseOp<"clz", [SameOperandsAndResultElementType]> {
+def Tosa_ClzOp : Tosa_ElementwiseUnaryOp<"clz"> {
   let summary = "Elementwise count leading zero op";
 
   let description = [{
@@ -991,8 +988,7 @@ def Tosa_ClzOp : Tosa_ElementwiseOp<"clz", [SameOperandsAndResultElementType]> {
 //===----------------------------------------------------------------------===//
 // Operator: cos
 //===----------------------------------------------------------------------===//
-def Tosa_CosOp : Tosa_ElementwiseOp<"cos",
-    [SameOperandsAndResultElementType]> {
+def Tosa_CosOp : Tosa_ElementwiseUnaryOp<"cos"> {
   let summary = "Elementwise cos op";
 
   let description = [{
@@ -1011,7 +1007,7 @@ def Tosa_CosOp : Tosa_ElementwiseOp<"cos",
 //===----------------------------------------------------------------------===//
 // Operator: exp
 //===----------------------------------------------------------------------===//
-def Tosa_ExpOp : Tosa_ElementwiseOp<"exp", [SameOperandsAndResultElementType]> {
+def Tosa_ExpOp : Tosa_ElementwiseUnaryOp<"exp"> {
   let summary = "Elementwise exp op";
 
   let description = [{
@@ -1032,7 +1028,7 @@ def Tosa_ExpOp : Tosa_ElementwiseOp<"exp", [SameOperandsAndResultElementType]> {
 //===----------------------------------------------------------------------===//
 // Operator: floor
 //===----------------------------------------------------------------------===//
-def Tosa_FloorOp : Tosa_ElementwiseOp<"floor", [SameOperandsAndResultElementType]> {
+def Tosa_FloorOp : Tosa_ElementwiseUnaryOp<"floor"> {
   let summary = "Elementwise floor op";
 
   let description = [{
@@ -1051,7 +1047,7 @@ def Tosa_FloorOp : Tosa_ElementwiseOp<"floor", [SameOperandsAndResultElementType
 //===----------------------------------------------------------------------===//
 // Operator: log
 //===----------------------------------------------------------------------===//
-def Tosa_LogOp : Tosa_ElementwiseOp<"log", [SameOperandsAndResultElementType]> {
+def Tosa_LogOp : Tosa_ElementwiseUnaryOp<"log"> {
   let summary = "Elementwise log op";
 
   let description = [{
@@ -1072,8 +1068,7 @@ def Tosa_LogOp : Tosa_ElementwiseOp<"log", [SameOperandsAndResultElementType]> {
 //===----------------------------------------------------------------------===//
 // Operator: logical_not
 //===----------------------------------------------------------------------===//
-def Tosa_LogicalNotOp : Tosa_ElementwiseOp<"logical_not",
-    [SameOperandsAndResultElementType]> {
+def Tosa_LogicalNotOp : Tosa_ElementwiseUnaryOp<"logical_not"> {
   let summary = "Returns the truth value of NOT x element-wise.";
 
   let description = [{
@@ -1092,8 +1087,7 @@ def Tosa_LogicalNotOp : Tosa_ElementwiseOp<"logical_not",
 //===----------------------------------------------------------------------===//
 // Operator: negate
 //===----------------------------------------------------------------------===//
-def Tosa_NegateOp : Tosa_ElementwiseOp<"negate",
-    [SameOperandsAndResultElementType]> {
+def Tosa_NegateOp : Tosa_ElementwiseUnaryOp<"negate"> {
   let summary = "Elementwise negate op";
 
   let description = [{
@@ -1117,8 +1111,7 @@ def Tosa_NegateOp : Tosa_ElementwiseOp<"negate",
 //===----------------------------------------------------------------------===//
 // Operator: reciprocal
 //===----------------------------------------------------------------------===//
-def Tosa_ReciprocalOp : Tosa_ElementwiseOp<"reciprocal",
-    [SameOperandsAndResultElementType]> {
+def Tosa_ReciprocalOp : Tosa_ElementwiseUnaryOp<"reciprocal"> {
   let summary = "Elementwise reciprocal op";
 
   let description = [{
@@ -1149,8 +1142,7 @@ def Tosa_ReciprocalOp : Tosa_ElementwiseOp<"reciprocal",
 //===----------------------------------------------------------------------===//
 // Operator: rsqrt
 //===----------------------------------------------------------------------===//
-def Tosa_RsqrtOp : Tosa_ElementwiseOp<"rsqrt",
-    [SameOperandsAndResultElementType]> {
+def Tosa_RsqrtOp : Tosa_ElementwiseUnaryOp<"rsqrt"> {
   let summary = "Elementwise 1/sqrt op";
 
   let description = [{
@@ -1170,8 +1162,7 @@ def Tosa_RsqrtOp : Tosa_ElementwiseOp<"rsqrt",
 //===----------------------------------------------------------------------===//
 // Operator: sin
 //===----------------------------------------------------------------------===//
-def Tosa_SinOp : Tosa_ElementwiseOp<"sin",
-    [SameOperandsAndResultElementType]> {
+def Tosa_SinOp : Tosa_ElementwiseUnaryOp<"sin"> {
   let summary = "Elementwise sin op";
 
   let description = [{
@@ -1641,7 +1632,7 @@ def Tosa_ReverseOp: Tosa_Op<"reverse", [
   }];
 
   let arguments = (ins
-    Tosa_Tensor:$input,
+    Tosa_Tensor:$input1,
     I32Attr:$axis
   );
 
@@ -1668,7 +1659,7 @@ def Tosa_SliceOp : Tosa_InferShapedTypeOp<"slice"> {
   }];
 
   let arguments = (ins
-    Tosa_Tensor:$input,
+    Tosa_Tensor:$input1,
     DenseI64ArrayAttr:$start,
     DenseI64ArrayAttr:$size
   );
@@ -1878,21 +1869,23 @@ def Tosa_RescaleOp: Tosa_Op<"rescale", [Pure,
 
   let description = [{
     Rescale quantized values into a new domain. Supported rescalings are:
-    Mode                    Input   Output
-    signed 8 to 8           int8    int8
-    signed 8 to 16          int8    int16
-    signed 8 to 32          int8    int32
-    signed 16 to 8          int16   int8
-    signed 16 to 16         int16   int16
-    signed 16 to 32         int16   int32
-    signed 32 to 8          int32   int8
-    signed 32 to 16         int32   int16
-    signed 32 to 32         int32   int32
-    signed 48 to 8          int48   int8
-    signed 48 to 16         int48   int16
-    signed 48 to 32         int48   int32
-    unsigned 8 to signed 8  uint8   int8
-    signed 8 to unsigned 8  int8    uint8
+
+    | Mode                   | Input | Output |
+    |------------------------|-------|--------|
+    | signed 8 to 8          | int8  | int8   |
+    | signed 8 to 16         | int8  | int16  |
+    | signed 8 to 32         | int8  | int32  |
+    | signed 16 to 8         | int16 | int8   |
+    | signed 16 to 16        | int16 | int16  |
+    | signed 16 to 32        | int16 | int32  |
+    | signed 32 to 8         | int32 | int8   |
+    | signed 32 to 16        | int32 | int16  |
+    | signed 32 to 32        | int32 | int32  |
+    | signed 48 to 8         | int48 | int8   |
+    | signed 48 to 16        | int48 | int16  |
+    | signed 48 to 32        | int48 | int32  |
+    | unsigned 8 to signed 8 | uint8 | int8   |
+    | signed 8 to unsigned 8 | int8  | uint8  |
   }];
 
   let arguments = (ins

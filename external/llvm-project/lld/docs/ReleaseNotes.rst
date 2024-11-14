@@ -41,9 +41,12 @@ Breaking changes
 
 COFF Improvements
 -----------------
+* ``/includeglob`` has been implemented to match the behavior of ``--undefined-glob`` available for ELF.
+* ``/lldsavetemps`` allows saving select intermediate LTO compilation results (e.g. resolution, preopt, promote, internalize, import, opt, precodegen, prelink, combinedindex).
 
 MinGW Improvements
 ------------------
+* ``--undefined-glob`` is now supported by translating into the ``/includeglob`` flag.
 
 MachO Improvements
 ------------------
