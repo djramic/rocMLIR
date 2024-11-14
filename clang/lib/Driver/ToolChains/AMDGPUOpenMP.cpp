@@ -232,12 +232,6 @@ const char *amdgpu::dlr::getLinkCommandArgs(
       LibSuffix.append("/asan");
   }
 
-  // If device debugging turned on, add specially built bc files
-  StringRef libpath = Args.MakeArgString(C.getDriver().Dir + "/../" + LibSuffix);
-  std::string lib_debug_perf_path = FindDebugPerfInLibraryPath(LibSuffix);
-  if (!lib_debug_perf_path.empty())
-    libpath = lib_debug_perf_path;
-
   llvm::SmallVector<std::string, 12> BCLibs;
 
   std::string AsanRTL;
@@ -260,27 +254,28 @@ const char *amdgpu::dlr::getLinkCommandArgs(
   // not the installed compiler.
   std::string LibDeviceName = "/libomptarget-amdgpu-" + GPUArch.str() + ".bc";
 
-  SmallString<128> Path(Args.MakeArgString(libpath + LibDeviceName));
-  if (LibSuffix != "lib" || llvm::sys::fs::exists(Path)) {
-    BCLibs.push_back(Args.MakeArgString(Path));
-  } else {
-    // Check if the device library can be found in
-    // one of the LIBRARY_PATH directories.
-    bool EnvOmpLibDeviceFound = false;
-    for (auto &EnvLibraryPath : EnvironmentLibraryPaths) {
-      std::string EnvOmpLibDevice = EnvLibraryPath + LibDeviceName;
-      if (llvm::sys::fs::exists(EnvOmpLibDevice)) {
-        EnvOmpLibDeviceFound = true;
-        BCLibs.push_back(EnvOmpLibDevice);
-        break;
-      }
+  // Check if libomptarget device bitcode can be found in a LIBRARY_PATH dir
+  bool EnvOmpLibDeviceFound = false;
+  for (auto &EnvLibraryPath : EnvironmentLibraryPaths) {
+    std::string EnvOmpLibDevice = EnvLibraryPath + LibDeviceName;
+    if (llvm::sys::fs::exists(EnvOmpLibDevice)) {
+      EnvOmpLibDeviceFound = true;
+      BCLibs.push_back(EnvOmpLibDevice);
+      break;
     }
-    // If LIBRARY_PATH doesn't point to the device library,
-    // then use the default one.
-    if (!EnvOmpLibDeviceFound) {
-      std::string RtDir = "/../runtimes/runtimes-bins/offload";
-      BCLibs.push_back(Args.MakeArgString(libpath + RtDir + LibDeviceName));
-    }
+  }
+
+  // If not found in LIBRARY_PATH, use default for the correct LibSuffix.
+  if (!EnvOmpLibDeviceFound) {
+    StringRef bc_file_suf = Args.MakeArgString(C.getDriver().Dir + "/../" +
+                                               LibSuffix + LibDeviceName);
+    StringRef bc_file_lib =
+        Args.MakeArgString(C.getDriver().Dir + "/../lib" + LibDeviceName);
+    if (llvm::sys::fs::exists(bc_file_suf))
+      BCLibs.push_back(Args.MakeArgString(bc_file_suf));
+    else if (llvm::sys::fs::exists(bc_file_lib))
+      // In case a LibSuffix version not found, use suffix "lib"
+      BCLibs.push_back(Args.MakeArgString(bc_file_lib));
   }
 
   if (!AsanRTL.empty()) {
@@ -435,11 +430,6 @@ void AMDGPUOpenMPToolChain::addClangTargetOptions(
                          options::OPT_fno_gpu_allow_device_init, false))
     CC1Args.push_back("-fgpu-allow-device-init");
 
-  // TODO: check if flag is needed for the opaque linker case
-  const char *UseLinkerWrapper = std::getenv("CLANG_USE_LINKER_WRAPPER");
-  if (!UseLinkerWrapper || atoi(UseLinkerWrapper) == 0)
-    CC1Args.push_back("-fcuda-allow-variadic-functions");
-
   // Default to "hidden" visibility, as object level linking will not be
   // supported for the foreseeable future.
   if (!DriverArgs.hasArg(options::OPT_fvisibility_EQ,
@@ -550,7 +540,7 @@ void AMDGPUOpenMPToolChain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   CC1Args.push_back("-internal-isystem");
   CC1Args.push_back(DriverArgs.MakeArgString(D.Dir + "/../include"));
   CC1Args.push_back("-internal-isystem");
-  CC1Args.push_back(DriverArgs.MakeArgString(D.Dir + "/../../include"));
+  CC1Args.push_back(DriverArgs.MakeArgString(D.Dir + "/../../../include"));
 
   HostTC.AddClangSystemIncludeArgs(DriverArgs, CC1Args);
 
@@ -558,6 +548,11 @@ void AMDGPUOpenMPToolChain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   SmallString<128> P(HostTC.getDriver().ResourceDir);
   llvm::sys::path::append(P, "include/cuda_wrappers");
   CC1Args.push_back(DriverArgs.MakeArgString(P));
+}
+
+void AMDGPUOpenMPToolChain::AddClangCXXStdlibIncludeArgs(
+    const llvm::opt::ArgList &Args, llvm::opt::ArgStringList &CC1Args) const {
+  HostTC.AddClangCXXStdlibIncludeArgs(Args, CC1Args);
 }
 
 /// Convert path list to Fortran frontend argument
@@ -599,12 +594,6 @@ void AMDGPUOpenMPToolChain::AddFlangSystemIncludeArgs(const ArgList &DriverArgs,
 
   AddFlangSysIncludeArg(DriverArgs, Flang1args, IncludePathList);
   return;
-}
-
-
-void AMDGPUOpenMPToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &Args,
-                                                 ArgStringList &CC1Args) const {
-  HostTC.AddClangCXXStdlibIncludeArgs(Args, CC1Args);
 }
 
 void AMDGPUOpenMPToolChain::AddIAMCUIncludeArgs(const ArgList &Args,

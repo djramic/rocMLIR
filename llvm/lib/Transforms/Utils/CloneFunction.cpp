@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ConstantFolding.h"
@@ -126,6 +125,7 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB, ValueToValueMapTy &VMap,
     if (isa<CallInst>(I) && !I.isDebugOrPseudoInst()) {
       hasCalls = true;
       hasMemProfMetadata |= I.hasMetadata(LLVMContext::MD_memprof);
+      hasMemProfMetadata |= I.hasMetadata(LLVMContext::MD_callsite);
     }
     if (const AllocaInst *AI = dyn_cast<AllocaInst>(&I)) {
       if (!AI->isStaticAlloca()) {
@@ -142,28 +142,14 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB, ValueToValueMapTy &VMap,
   return NewBB;
 }
 
-// Clone OldFunc into NewFunc, transforming the old arguments into references to
-// VMap values.
-//
-void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
-                             ValueToValueMapTy &VMap,
-                             CloneFunctionChangeType Changes,
-                             SmallVectorImpl<ReturnInst *> &Returns,
-                             const char *NameSuffix, ClonedCodeInfo *CodeInfo,
-                             ValueMapTypeRemapper *TypeMapper,
-                             ValueMaterializer *Materializer) {
-  NewFunc->setIsNewDbgInfoFormat(OldFunc->IsNewDbgInfoFormat);
-  assert(NameSuffix && "NameSuffix cannot be null!");
-
-#ifndef NDEBUG
-  for (const Argument &I : OldFunc->args())
-    assert(VMap.count(&I) && "No mapping from source argument specified!");
-#endif
-
-  bool ModuleLevelChanges = Changes > CloneFunctionChangeType::LocalChangesOnly;
-
-  // Copy all attributes other than those stored in the AttributeList.  We need
-  // to remap the parameter indices of the AttributeList.
+void llvm::CloneFunctionAttributesInto(Function *NewFunc,
+                                       const Function *OldFunc,
+                                       ValueToValueMapTy &VMap,
+                                       bool ModuleLevelChanges,
+                                       ValueMapTypeRemapper *TypeMapper,
+                                       ValueMaterializer *Materializer) {
+  // Copy all attributes other than those stored in Function's AttributeList
+  // which holds e.g. parameters and return value attributes.
   AttributeList NewAttrs = NewFunc->getAttributes();
   NewFunc->copyAttributesFrom(OldFunc);
   NewFunc->setAttributes(NewAttrs);
@@ -195,6 +181,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   // Clone any argument attributes that are present in the VMap.
   for (const Argument &OldArg : OldFunc->args()) {
     if (Argument *NewArg = dyn_cast<Argument>(VMap[&OldArg])) {
+      // Remap the parameter indices.
       NewArgAttrs[NewArg->getArgNo()] =
           OldAttrs.getParamAttrs(OldArg.getArgNo());
     }
@@ -203,6 +190,29 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   NewFunc->setAttributes(
       AttributeList::get(NewFunc->getContext(), OldAttrs.getFnAttrs(),
                          OldAttrs.getRetAttrs(), NewArgAttrs));
+}
+
+// Clone OldFunc into NewFunc, transforming the old arguments into references to
+// VMap values.
+void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
+                             ValueToValueMapTy &VMap,
+                             CloneFunctionChangeType Changes,
+                             SmallVectorImpl<ReturnInst *> &Returns,
+                             const char *NameSuffix, ClonedCodeInfo *CodeInfo,
+                             ValueMapTypeRemapper *TypeMapper,
+                             ValueMaterializer *Materializer) {
+  NewFunc->setIsNewDbgInfoFormat(OldFunc->IsNewDbgInfoFormat);
+  assert(NameSuffix && "NameSuffix cannot be null!");
+
+#ifndef NDEBUG
+  for (const Argument &I : OldFunc->args())
+    assert(VMap.count(&I) && "No mapping from source argument specified!");
+#endif
+
+  bool ModuleLevelChanges = Changes > CloneFunctionChangeType::LocalChangesOnly;
+
+  CloneFunctionAttributesInto(NewFunc, OldFunc, VMap, ModuleLevelChanges,
+                              TypeMapper, Materializer);
 
   // Everything else beyond this point deals with function instructions,
   // so if we are dealing with a function declaration, we're done.
@@ -500,8 +510,8 @@ PruningFunctionCloner::cloneInstruction(BasicBlock::const_iterator II) {
 
       // Create intrinsic call.
       LLVMContext &Ctx = NewFunc->getContext();
-      Function *IFn =
-          Intrinsic::getDeclaration(NewFunc->getParent(), CIID, TParams);
+      Function *IFn = Intrinsic::getOrInsertDeclaration(NewFunc->getParent(),
+                                                        CIID, TParams);
       SmallVector<Value *, 4> Args;
       unsigned NumOperands = OldInst.getNumOperands();
       if (isa<CallInst>(OldInst))
@@ -633,6 +643,7 @@ void PruningFunctionCloner::CloneBlock(
     if (isa<CallInst>(II) && !II->isDebugOrPseudoInst()) {
       hasCalls = true;
       hasMemProfMetadata |= II->hasMetadata(LLVMContext::MD_memprof);
+      hasMemProfMetadata |= II->hasMetadata(LLVMContext::MD_callsite);
     }
 
     CloneDbgRecordsToHere(NewInst, II);
@@ -895,9 +906,9 @@ void llvm::CloneAndPruneIntoFromInst(Function *NewFunc, const Function *OldFunc,
   // Drop all incompatible return attributes that cannot be applied to NewFunc
   // during cloning, so as to allow instruction simplification to reason on the
   // old state of the function. The original attributes are restored later.
-  AttributeMask IncompatibleAttrs =
-      AttributeFuncs::typeIncompatible(OldFunc->getReturnType());
   AttributeList Attrs = NewFunc->getAttributes();
+  AttributeMask IncompatibleAttrs = AttributeFuncs::typeIncompatible(
+      OldFunc->getReturnType(), Attrs.getRetAttrs());
   NewFunc->removeRetAttrs(IncompatibleAttrs);
 
   // As phi-nodes have been now remapped, allow incremental simplification of

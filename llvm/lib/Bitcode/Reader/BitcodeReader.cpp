@@ -792,6 +792,24 @@ private:
     return ResVal == nullptr;
   }
 
+  bool getValueOrMetadata(const SmallVectorImpl<uint64_t> &Record,
+                          unsigned &Slot, unsigned InstNum, Value *&ResVal,
+                          BasicBlock *ConstExprInsertBB) {
+    if (Slot == Record.size())
+      return true;
+    unsigned ValID = Record[Slot++];
+    if (ValID != static_cast<unsigned>(bitc::OB_METADATA)) {
+      unsigned TypeId;
+      return getValueTypePair(Record, --Slot, InstNum, ResVal, TypeId,
+                              ConstExprInsertBB);
+    }
+    if (Slot == Record.size())
+      return true;
+    unsigned ValNo = InstNum - (unsigned)Record[Slot++];
+    ResVal = MetadataAsValue::get(Context, getFnMetadataByID(ValNo));
+    return false;
+  }
+
   /// Read a value out of the specified record from slot 'Slot'. Increment Slot
   /// past the number of slots used by the value in the record. Return true if
   /// there is an error.
@@ -858,7 +876,8 @@ private:
     } else {
       int64_t Start = BitcodeReader::decodeSignRotatedValue(Record[OpNum++]);
       int64_t End = BitcodeReader::decodeSignRotatedValue(Record[OpNum++]);
-      return ConstantRange(APInt(BitWidth, Start), APInt(BitWidth, End));
+      return ConstantRange(APInt(BitWidth, Start, true),
+                           APInt(BitWidth, End, true));
     }
   }
 
@@ -2048,6 +2067,8 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::NoCallback;
   case bitc::ATTR_KIND_NO_CAPTURE:
     return Attribute::NoCapture;
+  case bitc::ATTR_KIND_NO_DIVERGENCE_SOURCE:
+    return Attribute::NoDivergenceSource;
   case bitc::ATTR_KIND_NO_DUPLICATE:
     return Attribute::NoDuplicate;
   case bitc::ATTR_KIND_NOFREE:
@@ -2146,6 +2167,8 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::SanitizeNumericalStability;
   case bitc::ATTR_KIND_SANITIZE_REALTIME:
     return Attribute::SanitizeRealtime;
+  case bitc::ATTR_KIND_SANITIZE_REALTIME_BLOCKING:
+    return Attribute::SanitizeRealtimeBlocking;
   case bitc::ATTR_KIND_SPECULATIVE_LOAD_HARDENING:
     return Attribute::SpeculativeLoadHardening;
   case bitc::ATTR_KIND_SWIFT_ERROR:
@@ -2192,6 +2215,8 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::Initializes;
   case bitc::ATTR_KIND_CORO_ELIDE_SAFE:
     return Attribute::CoroElideSafe;
+  case bitc::ATTR_KIND_NO_EXT:
+    return Attribute::NoExt;
   }
 }
 
@@ -2503,7 +2528,9 @@ Error BitcodeReader::parseTypeTableBody() {
       ResultTy = Type::getMetadataTy(Context);
       break;
     case bitc::TYPE_CODE_X86_MMX:   // X86_MMX
-      ResultTy = Type::getX86_MMXTy(Context);
+      // Deprecated: decodes as <1 x i64>
+      ResultTy =
+          llvm::FixedVectorType::get(llvm::IntegerType::get(Context, 64), 1);
       break;
     case bitc::TYPE_CODE_X86_AMX:   // X86_AMX
       ResultTy = Type::getX86_AMXTy(Context);
@@ -2634,7 +2661,8 @@ Error BitcodeReader::parseTypeTableBody() {
       }
       if (EltTys.size() != Record.size()-1)
         return error("Invalid named struct record");
-      Res->setBody(EltTys, Record[0]);
+      if (auto E = Res->setBodyOrError(EltTys, Record[0]))
+        return E;
       ContainedIDs.append(Record.begin() + 1, Record.end());
       ResultTy = Res;
       break;
@@ -5447,9 +5475,6 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
       if (IsFP && Record.size() > OpNum+1)
         FMF = getDecodedFastMathFlags(Record[++OpNum]);
 
-      if (OpNum+1 != Record.size())
-        return error("Invalid record");
-
       if (IsFP) {
         if (!CmpInst::isFPPredicate(PredVal))
           return error("Invalid fcmp predicate");
@@ -5458,7 +5483,13 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
         if (!CmpInst::isIntPredicate(PredVal))
           return error("Invalid icmp predicate");
         I = new ICmpInst(PredVal, LHS, RHS);
+        if (Record.size() > OpNum + 1 &&
+            (Record[++OpNum] & (1 << bitc::ICMP_SAME_SIGN)))
+          cast<ICmpInst>(I)->setSameSign();
       }
+
+      if (OpNum + 1 != Record.size())
+        return error("Invalid record");
 
       ResTypeID = getVirtualTypeID(I->getType()->getScalarType());
       if (LHS->getType()->isVectorTy())
@@ -6762,8 +6793,7 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
       unsigned OpNum = 1;
       while (OpNum != Record.size()) {
         Value *Op;
-        unsigned OpTypeID;
-        if (getValueTypePair(Record, OpNum, NextValueNo, Op, OpTypeID, CurBB))
+        if (getValueOrMetadata(Record, OpNum, NextValueNo, Op, CurBB))
           return error("Invalid record");
         Inputs.push_back(Op);
       }
@@ -7012,11 +7042,12 @@ Error BitcodeReader::materialize(GlobalValue *GV) {
     // Remove incompatible attributes on function calls.
     if (auto *CI = dyn_cast<CallBase>(&I)) {
       CI->removeRetAttrs(AttributeFuncs::typeIncompatible(
-          CI->getFunctionType()->getReturnType()));
+          CI->getFunctionType()->getReturnType(), CI->getRetAttributes()));
 
       for (unsigned ArgNo = 0; ArgNo < CI->arg_size(); ++ArgNo)
         CI->removeParamAttrs(ArgNo, AttributeFuncs::typeIncompatible(
-                                        CI->getArgOperand(ArgNo)->getType()));
+                                        CI->getArgOperand(ArgNo)->getType(),
+                                        CI->getParamAttributes(ArgNo)));
     }
   }
 
@@ -7929,7 +7960,8 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       break;
 
     case bitc::FS_CFI_FUNCTION_DEFS: {
-      std::set<std::string> &CfiFunctionDefs = TheIndex.cfiFunctionDefs();
+      std::set<std::string, std::less<>> &CfiFunctionDefs =
+          TheIndex.cfiFunctionDefs();
       for (unsigned I = 0; I != Record.size(); I += 2)
         CfiFunctionDefs.insert(
             {Strtab.data() + Record[I], static_cast<size_t>(Record[I + 1])});
@@ -7937,7 +7969,8 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
     }
 
     case bitc::FS_CFI_FUNCTION_DECLS: {
-      std::set<std::string> &CfiFunctionDecls = TheIndex.cfiFunctionDecls();
+      std::set<std::string, std::less<>> &CfiFunctionDecls =
+          TheIndex.cfiFunctionDecls();
       for (unsigned I = 0; I != Record.size(); I += 2)
         CfiFunctionDecls.insert(
             {Strtab.data() + Record[I], static_cast<size_t>(Record[I + 1])});
