@@ -285,9 +285,9 @@ public:
 //
 class PopulateParams : public BasePopulateParams<InitParamsNonAccel> {
 private:
-  #define NonAccel_DECLARATIONS_GEN
-  #include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
-  #undef NonAccel_DECLARATIONS_GEN
+#define NonAccel_DECLARATIONS_GEN
+#include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
+#undef NonAccel_DECLARATIONS_GEN
   // if can't select config from above , use this config to do
   // padding kernel for example , GemmK/block is 16 , if your gemmK is  13 , we
   // add more 3 gemmk
@@ -388,9 +388,9 @@ protected:
 // Xdlops interface
 //
 class PopulateParamsXDL : public PopulateParamsAccel {
-  #define XDL_DECLARATIONS_GEN
-  #include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
-  #undef XDL_DECLARATIONS_GEN
+#define XDL_DECLARATIONS_GEN
+#include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
+#undef XDL_DECLARATIONS_GEN
 
 public:
   std::vector<InitParamsAccel>
@@ -416,9 +416,9 @@ protected:
 //
 class PopulateParamsWmma : public PopulateParamsAccel {
 private:
-  #define Wmma_DECLARATIONS_GEN
-  #include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
-  #undef Wmma_DECLARATIONS_GEN
+#define Wmma_DECLARATIONS_GEN
+#include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
+#undef Wmma_DECLARATIONS_GEN
 
 public:
   std::vector<InitParamsAccel>

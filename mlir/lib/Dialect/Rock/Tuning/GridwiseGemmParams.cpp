@@ -37,9 +37,9 @@ llvm::raw_ostream &mlir::rock::operator<<(llvm::raw_ostream &os,
 
 /// Non-xdlops
 // clang-format off
-  #define NonAccel_DEFINITIONS_GEN
-  #include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
-  #undef NonAccel_DEFINITIONS_GEN
+#define NonAccel_DEFINITIONS_GEN
+#include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
+#undef NonAccel_DEFINITIONS_GEN
 // clang-format on
 
 PopulateParamsInfo PopulateParamsInfo::fromOp(RockGemmWrapperInterface op) {
@@ -274,10 +274,9 @@ std::vector<InitParamsNonAccel>
 PopulateParams::getTuningParameters(KernelType opType, Type dataTypeA,
                                     Type dataTypeB) const {
   ArrayRef<InitParamsNonAccel> params;
-  if(opType == KernelType::Gemm){
+  if (opType == KernelType::Gemm) {
     params = {initParametersGemm, nInitParametersGemm};
-  }
-  else{
+  } else {
     params = {initParametersConv, nInitParametersConv};
   }
   return std::vector<InitParamsNonAccel>(params);
@@ -409,9 +408,9 @@ PopulateParamsAccel::obtainTuningParameters(RockGemmWrapperInterface op,
 
 /// Xdlops acceleration
 // clang-format off
-  #define XDL_DEFINITIONS_GEN
-  #include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
-  #undef XDL_DEFINITIONS_GEN
+#define XDL_DEFINITIONS_GEN
+#include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
+#undef XDL_DEFINITIONS_GEN
 // clang-format on
 
 LogicalResult PopulateParamsXDL::isValidBlockwiseGemm(
@@ -545,7 +544,7 @@ std::vector<InitParamsAccel>
 PopulateParamsXDL::getTuningParameters(KernelType opType, Type dataTypeA,
                                        Type dataTypeB, StringRef arch) const {
   ArrayRef<InitParamsAccel> params;
-  if(opType == KernelType::Gemm){
+  if (opType == KernelType::Gemm) {
     switch (dataTypeA.getIntOrFloatBitWidth()) {
     case 8:
       params = {initParametersForward8BitGemm, nInitParametersForward8BitGemm};
@@ -556,9 +555,8 @@ PopulateParamsXDL::getTuningParameters(KernelType opType, Type dataTypeA,
     default:
       params = {initParametersGemm, nInitParametersGemm};
     }
-  }
-  else{
-     switch (dataTypeA.getIntOrFloatBitWidth()) {
+  } else {
+    switch (dataTypeA.getIntOrFloatBitWidth()) {
     case 8:
       params = {initParametersForward8BitConv, nInitParametersForward8BitConv};
       break;
@@ -611,9 +609,9 @@ PopulateParamsXDL::getGemmParamsAttr(OpBuilder &builder,
 
 /// Wmma acceleration
 // clang-format off
-  #define Wmma_DEFINITIONS_GEN
-  #include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
-  #undef Wmma_DEFINITIONS_GEN
+#define Wmma_DEFINITIONS_GEN
+#include "mlir/Dialect/Rock/Tuning/QuickTuningPerfconfigs.inc"
+#undef Wmma_DEFINITIONS_GEN
 // clang-format on
 
 LogicalResult PopulateParamsWmma::isValidBlockwiseGemm(
@@ -714,7 +712,7 @@ PopulateParamsWmma::getTuningParameters(KernelType opType, Type dataTypeA,
                                         Type dataTypeB, StringRef arch) const {
   ArrayRef<InitParamsAccel> params;
   std::vector<InitParamsAccel> res;
-  if(opType == KernelType::Gemm){
+  if (opType == KernelType::Gemm) {
     switch (dataTypeA.getIntOrFloatBitWidth()) {
     case 8:
       params = {initParametersForward8BitGemm, nInitParametersForward8BitGemm};
@@ -725,8 +723,7 @@ PopulateParamsWmma::getTuningParameters(KernelType opType, Type dataTypeA,
     default:
       return res;
     }
-  }
-  else {
+  } else {
     switch (dataTypeA.getIntOrFloatBitWidth()) {
     case 8:
       params = {initParametersForward8BitConv, nInitParametersForward8BitConv};
