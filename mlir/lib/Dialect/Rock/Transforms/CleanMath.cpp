@@ -93,13 +93,29 @@ static LogicalResult deleteTrivialRemainder(DataFlowSolver &solver,
 
 static LogicalResult replaceWithConstant(DataFlowSolver &solver, OpBuilder &b,
                                          OperationFolder &folder, Value value) {
+  // llvm::dbgs() << "\nValue: " << value << "\n"
+  //              << "Value type: " << value.getType() << "\n";
   auto *maybeInferredRange =
       solver.lookupState<IntegerValueRangeLattice>(value);
-  if (!maybeInferredRange || maybeInferredRange->getValue().isUninitialized())
+
+  // llvm::dbgs() << "MaybeInferredRange: " << !maybeInferredRange << "\n"
+  //              << "------------------: " << maybeInferredRange->getValue() 
+  //              << "------------------: " << maybeInferredRange->getValue().isUninitialized() << "\n";
+
+  if (!maybeInferredRange || maybeInferredRange->getValue().isUninitialized()){
+    // llvm::dbgs() << "Jaganjac beeee!\n";
     return failure();
+  }
+  
+  IntegerType integerType = llvm::dyn_cast<IntegerType>(value.getType());
+  if (!integerType){
+    // llvm::dbgs() << "Jaganjac beeee_2!\n";
+    return failure();
+  }
   const ConstantIntRanges &inferredRange =
       maybeInferredRange->getValue().getValue();
   std::optional<APInt> maybeConstValue = inferredRange.getConstantValue();
+  // llvm::dbgs() << "maybeConstValue: " << maybeConstValue.has_value() << "\n";
   if (!maybeConstValue.has_value())
     return failure();
 
@@ -111,6 +127,7 @@ static LogicalResult replaceWithConstant(DataFlowSolver &solver, OpBuilder &b,
   Value constant =
       folder.getOrCreateConstant(b.getInsertionBlock(), valueDialect, constAttr,
                                  value.getType());
+  // llvm::dbgs() << "Constant type: " << constant.getType() << "\n";
   if (!constant)
     return failure();
 
@@ -129,11 +146,9 @@ static void rewrite(DataFlowSolver &solver, MLIRContext *context,
 
   OpBuilder builder(context);
   OperationFolder folder(context);
-
   addToWorklist(initialRegions);
   while (!worklist.empty()) {
     Block *block = worklist.pop_back_val();
-
     for (Operation &op : llvm::make_early_inc_range(*block)) {
       builder.setInsertionPoint(&op);
 
@@ -156,7 +171,6 @@ static void rewrite(DataFlowSolver &solver, MLIRContext *context,
       // Add any the regions of this operation to the worklist.
       addToWorklist(op.getRegions());
     }
-
     // Replace any block arguments with constants.
     builder.setInsertionPointToStart(block);
     for (BlockArgument arg : block->getArguments())

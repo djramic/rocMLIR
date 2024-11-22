@@ -112,9 +112,9 @@ void mlir::mhal::populateMHalNarrowTypeEmulationConversions(
   // in ops that haven't been converted yet.
   auto materializer = [](OpBuilder &builder, MemRefType illegalType,
                          ValueRange inputs,
-                         Location loc) -> std::optional<Value> {
+                         Location loc) -> Value {
     if (inputs.size() != 1)
-      return std::nullopt;
+      return Value();
     Value input = inputs.front();
     if (input.getType() == illegalType)
       return input;

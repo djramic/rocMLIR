@@ -74,7 +74,7 @@ void mhal::buildGraphPipeline(OpPassManager &pm,
   SmallVector<std::string, 4> anchors{"tosa.conv2d", "tosa.depthwise_conv2d",
                                       "tosa.matmul"};
   tosa::TosaPartitionOptions opts;
-  opts.anchorOps = anchors;
+  opts.anchorOps = std::move(anchors);
   opts.trailingOnly = true;
   pm.addPass(tosa::createTosaPartition(opts));
   pm.addPass(mhal::createMHALAnnotateAccessKindsPass());
@@ -92,7 +92,7 @@ void mhal::buildGraphPipeline(OpPassManager &pm,
   /* mlir-opt --mhal-target-kernels
    */
   pm.addPass(mhal::createMHALTargetKernelsPass(
-      mhal::MHALTargetKernelsPassOptions{options.targets}));
+      mhal::MHALTargetKernelsPassOptions{SmallVector<std::string>{options.targets.begin(), options.targets.end()}}));
 }
 
 /// Collect target objects and package with host partitioned kernels
@@ -111,8 +111,8 @@ void mhal::buildRunnerPipeline(OpPassManager &pm,
 #ifdef MHAL_ENABLE_HOST_RUNNER
   // Select targets
   MHALSelectTargetsPassOptions targetOpts;
-  targetOpts.targetTypes = options.targetTypes;
-  targetOpts.targetArchs = options.targetArchs;
+  targetOpts.targetTypes = SmallVector<std::string>{options.targetTypes.begin(), options.targetTypes.end()};
+  targetOpts.targetArchs = SmallVector<std::string>{options.targetArchs.begin(), options.targetArchs.end()};
   pm.addNestedPass<func::FuncOp>(createMHALSelectTargetsPass(targetOpts));
 
   pm.addNestedPass<func::FuncOp>(createMHALPrefillPass());

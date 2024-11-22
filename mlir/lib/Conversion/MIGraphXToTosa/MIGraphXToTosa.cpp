@@ -65,7 +65,7 @@ migraphx::MIXRShapedToTensorConverter::MIXRShapedToTensorConverter() {
 
   addSourceMaterialization([](OpBuilder &b, MIXRShapedType shapedResType,
                               ValueRange tensorResult,
-                              Location loc) -> std::optional<Value> {
+                              Location loc) -> Value {
     if (tensorResult.size() != 1)
       return Value(); // 1-1 conversions only.
     return b.create<migraphx::AsUnderlyingShapeOp>(loc, shapedResType,
@@ -74,7 +74,7 @@ migraphx::MIXRShapedToTensorConverter::MIXRShapedToTensorConverter() {
 
   addTargetMaterialization([](OpBuilder &b, Type wantedInputType,
                               ValueRange shapedInput,
-                              Location loc) -> std::optional<Value> {
+                              Location loc) -> Value {
     if (shapedInput.size() != 1)
       return Value(); // 1-1 conversions only.
     return b.create<migraphx::AsLogicalShapeOp>(loc, wantedInputType,

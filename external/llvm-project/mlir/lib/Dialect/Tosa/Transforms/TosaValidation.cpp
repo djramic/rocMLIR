@@ -405,7 +405,7 @@ private:
     if (level == TosaLevelEnum::EightK) {
       tosaLevel = TOSA_LEVEL_EIGHTK;
     }
-
+         
     if (!profile.empty()) {
       for (std::string &prof : profile) {
         auto profSymbol = symbolizeTosaProfileEnum(prof);
@@ -520,9 +520,10 @@ LogicalResult TosaValidation::applyVariableCheck(Operation *op) {
 }
 
 bool TosaValidation::isValidElementType(Type type) {
+
   if (isa<FloatType>(type)) {
-    if (!isEnabledProfile(TosaProfileEnum::MainInference))
-      return false;
+     if (!isEnabledProfile(TosaProfileEnum::MainInference))
+       return false;
     return type.isF32() || type.isF16() || type.isBF16() ||
            type.isFloat8E4M3FNUZ() || type.isFloat8E5M2FNUZ() ||
            type.isFloat8E4M3FN() || type.isFloat8E5M2();
@@ -545,6 +546,7 @@ bool TosaValidation::isValidElementType(Type type) {
       case 16:
       case 32:
       case 48:
+      case 64:
         return true;
       default:
         return false;
