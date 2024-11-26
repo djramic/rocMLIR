@@ -92,7 +92,6 @@ MLIRComplexToLLVM
 MLIRControlFlowDialect
 MLIRControlFlowInterfaces
 MLIRControlFlowToLLVM
-MLIRConvertToLLVMInterface
 MLIRConvertToLLVMPass
 MLIRCopyOpInterface
 MLIRDLTIDialect
