@@ -351,6 +351,7 @@ void mlir::configureGpuToROCDLConversionLegality(ConversionTarget &target) {
 template <typename OpTy>
 static void populateOpPatterns(const LLVMTypeConverter &converter,
                                RewritePatternSet &patterns, StringRef f32Func,
+                               StringRef f64Func, StringRef f32ApproxFunc,
                                StringRef f16Func) {
   patterns.add<ScalarizeVectorOpLowering<OpTy>>(converter);
   patterns.add<OpToFuncCallLowering<OpTy>>(converter, f32Func, f32ApproxFunc,
