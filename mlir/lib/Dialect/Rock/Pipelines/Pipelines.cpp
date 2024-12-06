@@ -74,8 +74,11 @@ void rock::buildBufferizePipeline(OpPassManager &pm,
   // (see mlir/lib/Conversion/TosaToLinalg/TosaToLinalgPass.cpp)
   TosaToLinalgOptions tosaToLinalgOptions;
   TosaToLinalgNamedOptions tosaToLinalgNamedOptions;
+  tosa::TosaValidationOptions validationOptions;
+  validationOptions.level = tosa::TosaLevelEnum::None;
+  validationOptions.profile = {"bi","mi","mt"};
   tosa::addTosaToLinalgPasses(pm, tosaToLinalgOptions,
-                              tosaToLinalgNamedOptions);
+                              tosaToLinalgNamedOptions, validationOptions);
 
   // for tosa control flow
   /* rocmlir-opt --tosa-to-tensor --tosa-to-scf --tosa-to-arith

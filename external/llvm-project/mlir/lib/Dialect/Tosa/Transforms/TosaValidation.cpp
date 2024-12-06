@@ -545,6 +545,7 @@ bool TosaValidation::isValidElementType(Type type) {
       case 16:
       case 32:
       case 48:
+      case 64:
         return true;
       default:
         return false;
