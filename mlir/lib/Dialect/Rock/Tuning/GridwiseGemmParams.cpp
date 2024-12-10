@@ -547,7 +547,7 @@ PopulateParamsXDL::getTuningParameters(KernelType opType, Type dataTypeA,
   if (opType == KernelType::Gemm) {
     switch (dataTypeA.getIntOrFloatBitWidth()) {
     case 8:
-      params = {initParametersForward8BitGemm, nInitParametersForward8BitGemm};
+      params = {initParametersI8Gemm, nInitParametersI8Gemm};
       break;
     case 16:
       params = {initParametersFp16Gemm, nInitParametersFp16Gemm};
@@ -715,7 +715,7 @@ PopulateParamsWmma::getTuningParameters(KernelType opType, Type dataTypeA,
   if (opType == KernelType::Gemm) {
     switch (dataTypeA.getIntOrFloatBitWidth()) {
     case 8:
-      params = {initParametersForward8BitGemm, nInitParametersForward8BitGemm};
+      params = {initParametersI8Gemm, nInitParametersI8Gemm};
       break;
     case 16:
       params = {initParametersFp16Gemm, nInitParametersFp16Gemm};
