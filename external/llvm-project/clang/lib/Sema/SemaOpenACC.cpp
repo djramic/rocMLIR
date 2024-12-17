@@ -1389,7 +1389,8 @@ OpenACCClause *SemaOpenACCClauseVisitor::VisitReductionClause(
   // Restrictions only properly implemented on 'compute' constructs, and
   // 'compute' constructs are the only construct that can do anything with
   // this yet, so skip/treat as unimplemented in this case.
-  // TODO: OpenACC: Remove check once we get combined constructs for this clause.
+  // TODO: OpenACC: Remove check once we get combined constructs for this
+  // clause.
   if (!isOpenACCComputeDirectiveKind(Clause.getDirectiveKind()) &&
       Clause.getDirectiveKind() != OpenACCDirectiveKind::Loop)
     return isNotImplemented();
@@ -1754,7 +1755,6 @@ SemaOpenACC::ActOnClause(ArrayRef<const OpenACCClause *> ExistingClauses,
         << Clause.getClauseKind();
 
   return Result;
-
 }
 
 namespace {

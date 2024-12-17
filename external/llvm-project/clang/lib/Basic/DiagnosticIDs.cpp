@@ -105,11 +105,11 @@ const uint32_t StaticDiagInfoDescriptionOffsets[] = {
 
 // Diagnostic classes.
 enum DiagnosticClass {
-  CLASS_NOTE       = 0x01,
-  CLASS_REMARK     = 0x02,
-  CLASS_WARNING    = 0x03,
-  CLASS_EXTENSION  = 0x04,
-  CLASS_ERROR      = 0x05
+  CLASS_NOTE = 0x01,
+  CLASS_REMARK = 0x02,
+  CLASS_WARNING = 0x03,
+  CLASS_EXTENSION = 0x04,
+  CLASS_ERROR = 0x05
 };
 
 struct StaticDiagInfoRec {
@@ -357,47 +357,46 @@ static unsigned getBuiltinDiagClass(unsigned DiagID) {
 //===----------------------------------------------------------------------===//
 
 namespace clang {
-  namespace diag {
-    class CustomDiagInfo {
-      typedef std::pair<DiagnosticIDs::Level, std::string> DiagDesc;
-      std::vector<DiagDesc> DiagInfo;
-      std::map<DiagDesc, unsigned> DiagIDs;
-    public:
+namespace diag {
+class CustomDiagInfo {
+  typedef std::pair<DiagnosticIDs::Level, std::string> DiagDesc;
+  std::vector<DiagDesc> DiagInfo;
+  std::map<DiagDesc, unsigned> DiagIDs;
 
-      /// getDescription - Return the description of the specified custom
-      /// diagnostic.
-      StringRef getDescription(unsigned DiagID) const {
-        assert(DiagID - DIAG_UPPER_LIMIT < DiagInfo.size() &&
-               "Invalid diagnostic ID");
-        return DiagInfo[DiagID-DIAG_UPPER_LIMIT].second;
-      }
+public:
+  /// getDescription - Return the description of the specified custom
+  /// diagnostic.
+  StringRef getDescription(unsigned DiagID) const {
+    assert(DiagID - DIAG_UPPER_LIMIT < DiagInfo.size() &&
+           "Invalid diagnostic ID");
+    return DiagInfo[DiagID - DIAG_UPPER_LIMIT].second;
+  }
 
-      /// getLevel - Return the level of the specified custom diagnostic.
-      DiagnosticIDs::Level getLevel(unsigned DiagID) const {
-        assert(DiagID - DIAG_UPPER_LIMIT < DiagInfo.size() &&
-               "Invalid diagnostic ID");
-        return DiagInfo[DiagID-DIAG_UPPER_LIMIT].first;
-      }
+  /// getLevel - Return the level of the specified custom diagnostic.
+  DiagnosticIDs::Level getLevel(unsigned DiagID) const {
+    assert(DiagID - DIAG_UPPER_LIMIT < DiagInfo.size() &&
+           "Invalid diagnostic ID");
+    return DiagInfo[DiagID - DIAG_UPPER_LIMIT].first;
+  }
 
-      unsigned getOrCreateDiagID(DiagnosticIDs::Level L, StringRef Message,
-                                 DiagnosticIDs &Diags) {
-        DiagDesc D(L, std::string(Message));
-        // Check to see if it already exists.
-        std::map<DiagDesc, unsigned>::iterator I = DiagIDs.lower_bound(D);
-        if (I != DiagIDs.end() && I->first == D)
-          return I->second;
+  unsigned getOrCreateDiagID(DiagnosticIDs::Level L, StringRef Message,
+                             DiagnosticIDs &Diags) {
+    DiagDesc D(L, std::string(Message));
+    // Check to see if it already exists.
+    std::map<DiagDesc, unsigned>::iterator I = DiagIDs.lower_bound(D);
+    if (I != DiagIDs.end() && I->first == D)
+      return I->second;
 
-        // If not, assign a new ID.
-        unsigned ID = DiagInfo.size()+DIAG_UPPER_LIMIT;
-        DiagIDs.insert(std::make_pair(D, ID));
-        DiagInfo.push_back(D);
-        return ID;
-      }
-    };
+    // If not, assign a new ID.
+    unsigned ID = DiagInfo.size() + DIAG_UPPER_LIMIT;
+    DiagIDs.insert(std::make_pair(D, ID));
+    DiagInfo.push_back(D);
+    return ID;
+  }
+};
 
-  } // end diag namespace
-} // end clang namespace
-
+} // namespace diag
+} // namespace clang
 
 //===----------------------------------------------------------------------===//
 // Common Diagnostic implementation
@@ -419,7 +418,6 @@ unsigned DiagnosticIDs::getCustomDiagID(Level L, StringRef FormatString) {
   return CustomDiagInfo->getOrCreateDiagID(L, FormatString, *this);
 }
 
-
 /// isBuiltinWarningOrExtension - Return true if the unmapped diagnostic
 /// level of the specified diagnostic ID is a Warning or Extension.
 /// This only works on builtin diagnostics, not custom ones, and is not legal to
@@ -433,7 +431,7 @@ bool DiagnosticIDs::isBuiltinWarningOrExtension(unsigned DiagID) {
 /// Note.
 bool DiagnosticIDs::isBuiltinNote(unsigned DiagID) {
   return DiagID < diag::DIAG_UPPER_LIMIT &&
-    getBuiltinDiagClass(DiagID) == CLASS_NOTE;
+         getBuiltinDiagClass(DiagID) == CLASS_NOTE;
 }
 
 /// isBuiltinExtensionDiag - Determine whether the given built-in diagnostic
@@ -442,7 +440,7 @@ bool DiagnosticIDs::isBuiltinNote(unsigned DiagID) {
 /// which case -pedantic enables it) or treated as a warning/error by default.
 ///
 bool DiagnosticIDs::isBuiltinExtensionDiag(unsigned DiagID,
-                                        bool &EnabledByDefault) {
+                                           bool &EnabledByDefault) {
   if (DiagID >= diag::DIAG_UPPER_LIMIT ||
       getBuiltinDiagClass(DiagID) != CLASS_EXTENSION)
     return false;
@@ -710,8 +708,8 @@ static bool getDiagnosticsInGroup(diag::Flavor Flavor,
   // Add the members of the subgroups.
   const int16_t *SubGroups = DiagSubGroups + Group->SubGroups;
   for (; *SubGroups != (int16_t)-1; ++SubGroups)
-    NotFound &= getDiagnosticsInGroup(Flavor, &OptionTable[(short)*SubGroups],
-                                      Diags);
+    NotFound &=
+        getDiagnosticsInGroup(Flavor, &OptionTable[(short)*SubGroups], Diags);
 
   return NotFound;
 }

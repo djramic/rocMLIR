@@ -584,15 +584,15 @@ namespace AArch64PSBHint {
 
 namespace AArch64PHint {
 struct PHint {
-  const char *Name;
-  const char *AltName;
-  unsigned Encoding;
-  FeatureBitset FeaturesRequired;
+    const char *Name;
+    const char *AltName;
+    unsigned Encoding;
+    FeatureBitset FeaturesRequired;
 
-  bool haveFeatures(FeatureBitset ActiveFeatures) const {
+    bool haveFeatures(FeatureBitset ActiveFeatures) const {
     return ActiveFeatures[llvm::AArch64::FeatureAll] ||
            (FeaturesRequired & ActiveFeatures) == FeaturesRequired;
-  }
+    }
 };
 
 #define GET_PHINT_DECL

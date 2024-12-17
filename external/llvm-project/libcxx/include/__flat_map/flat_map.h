@@ -254,15 +254,15 @@ private:
 public:
   // [flat.map.cons], construct/copy/destroy
   _LIBCPP_HIDE_FROM_ABI flat_map() noexcept(
-      is_nothrow_default_constructible_v<_KeyContainer> && is_nothrow_default_constructible_v<_MappedContainer> &&
-      is_nothrow_default_constructible_v<_Compare>)
+      is_nothrow_default_constructible_v<_KeyContainer>&& is_nothrow_default_constructible_v<_MappedContainer>&&
+          is_nothrow_default_constructible_v<_Compare>)
       : __containers_(), __compare_() {}
 
   _LIBCPP_HIDE_FROM_ABI flat_map(const flat_map&) = default;
 
   _LIBCPP_HIDE_FROM_ABI flat_map(flat_map&& __other) noexcept(
-      is_nothrow_move_constructible_v<_KeyContainer> && is_nothrow_move_constructible_v<_MappedContainer> &&
-      is_nothrow_move_constructible_v<_Compare>)
+      is_nothrow_move_constructible_v<_KeyContainer>&& is_nothrow_move_constructible_v<_MappedContainer>&&
+          is_nothrow_move_constructible_v<_Compare>)
 #  if _LIBCPP_HAS_EXCEPTIONS
       try
 #  endif // _LIBCPP_HAS_EXCEPTIONS
@@ -502,8 +502,8 @@ public:
   _LIBCPP_HIDE_FROM_ABI flat_map& operator=(const flat_map&) = default;
 
   _LIBCPP_HIDE_FROM_ABI flat_map& operator=(flat_map&& __other) noexcept(
-      is_nothrow_move_assignable_v<_KeyContainer> && is_nothrow_move_assignable_v<_MappedContainer> &&
-      is_nothrow_move_assignable_v<_Compare>) {
+      is_nothrow_move_assignable_v<_KeyContainer>&& is_nothrow_move_assignable_v<_MappedContainer>&&
+          is_nothrow_move_assignable_v<_Compare>) {
     // No matter what happens, we always want to clear the other container before returning
     // since we moved from it
     auto __clear_other_guard = std::__make_scope_guard([&]() noexcept { __other.clear() /* noexcept */; });
@@ -1307,22 +1307,20 @@ template <ranges::input_range _Range,
           class _Compare   = less<__range_key_type<_Range>>,
           class _Allocator = allocator<byte>,
           class            = __enable_if_t<!__is_allocator<_Compare>::value && __is_allocator<_Allocator>::value>>
-flat_map(from_range_t, _Range&&, _Compare = _Compare(), _Allocator = _Allocator())
-    -> flat_map<
-        __range_key_type<_Range>,
-        __range_mapped_type<_Range>,
-        _Compare,
-        vector<__range_key_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_key_type<_Range>>>,
-        vector<__range_mapped_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_mapped_type<_Range>>>>;
+flat_map(from_range_t, _Range&&, _Compare = _Compare(), _Allocator = _Allocator()) -> flat_map<
+    __range_key_type<_Range>,
+    __range_mapped_type<_Range>,
+    _Compare,
+    vector<__range_key_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_key_type<_Range>>>,
+    vector<__range_mapped_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_mapped_type<_Range>>>>;
 
 template <ranges::input_range _Range, class _Allocator, class = __enable_if_t<__is_allocator<_Allocator>::value>>
-flat_map(from_range_t, _Range&&, _Allocator)
-    -> flat_map<
-        __range_key_type<_Range>,
-        __range_mapped_type<_Range>,
-        less<__range_key_type<_Range>>,
-        vector<__range_key_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_key_type<_Range>>>,
-        vector<__range_mapped_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_mapped_type<_Range>>>>;
+flat_map(from_range_t, _Range&&, _Allocator) -> flat_map<
+    __range_key_type<_Range>,
+    __range_mapped_type<_Range>,
+    less<__range_key_type<_Range>>,
+    vector<__range_key_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_key_type<_Range>>>,
+    vector<__range_mapped_type<_Range>, __allocator_traits_rebind_t<_Allocator, __range_mapped_type<_Range>>>>;
 
 template <class _Key, class _Tp, class _Compare = less<_Key>>
   requires(!__is_allocator<_Compare>::value)

@@ -435,7 +435,7 @@ void func() {
                     /*Callback=*/nullptr);
   EXPECT_TRUE(Preamble);
   EXPECT_TRUE(Preamble->RequiredModules);
-  
+
   auto Result = codeComplete(getFullPath("Use.cpp"), Test.point(),
                              Preamble.get(), Use, {});
   EXPECT_FALSE(Result.Completions.empty());
@@ -474,7 +474,7 @@ void func() {
                     /*Callback=*/nullptr);
   EXPECT_TRUE(Preamble);
   EXPECT_TRUE(Preamble->RequiredModules);
-  
+
   auto Result = signatureHelp(getFullPath("Use.cpp"), Test.point(),
                               *Preamble.get(), Use, MarkupKind::PlainText);
   EXPECT_FALSE(Result.signatures.empty());

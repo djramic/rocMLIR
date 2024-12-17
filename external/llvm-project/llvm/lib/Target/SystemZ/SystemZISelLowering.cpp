@@ -9861,9 +9861,9 @@ static void printFunctionArgExts(const Function *F, raw_fd_ostream &OS) {
   OS << ")\n";
 }
 
-void SystemZTargetLowering::
-verifyNarrowIntegerArgs_Call(const SmallVectorImpl<ISD::OutputArg> &Outs,
-                             const Function *F, SDValue Callee) const {
+void SystemZTargetLowering::verifyNarrowIntegerArgs_Call(
+    const SmallVectorImpl<ISD::OutputArg> &Outs, const Function *F,
+    SDValue Callee) const {
   bool IsInternal = false;
   const Function *CalleeFn = nullptr;
   if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee))
@@ -9871,7 +9871,8 @@ verifyNarrowIntegerArgs_Call(const SmallVectorImpl<ISD::OutputArg> &Outs,
       IsInternal = isFullyInternal(CalleeFn);
   if (!verifyNarrowIntegerArgs(Outs, IsInternal)) {
     errs() << "ERROR: Missing extension attribute of passed "
-           << "value in call to function:\n" << "Callee:  ";
+           << "value in call to function:\n"
+           << "Callee:  ";
     if (CalleeFn != nullptr)
       printFunctionArgExts(CalleeFn, errs());
     else
@@ -9882,9 +9883,8 @@ verifyNarrowIntegerArgs_Call(const SmallVectorImpl<ISD::OutputArg> &Outs,
   }
 }
 
-void SystemZTargetLowering::
-verifyNarrowIntegerArgs_Ret(const SmallVectorImpl<ISD::OutputArg> &Outs,
-                            const Function *F) const {
+void SystemZTargetLowering::verifyNarrowIntegerArgs_Ret(
+    const SmallVectorImpl<ISD::OutputArg> &Outs, const Function *F) const {
   if (!verifyNarrowIntegerArgs(Outs, isFullyInternal(F))) {
     errs() << "ERROR: Missing extension attribute of returned "
            << "value from function:\n";
@@ -9895,9 +9895,8 @@ verifyNarrowIntegerArgs_Ret(const SmallVectorImpl<ISD::OutputArg> &Outs,
 
 // Verify that narrow integer arguments are extended as required by the ABI.
 // Return false if an error is found.
-bool SystemZTargetLowering::
-verifyNarrowIntegerArgs(const SmallVectorImpl<ISD::OutputArg> &Outs,
-                        bool IsInternal) const {
+bool SystemZTargetLowering::verifyNarrowIntegerArgs(
+    const SmallVectorImpl<ISD::OutputArg> &Outs, bool IsInternal) const {
   if (IsInternal || !Subtarget.isTargetELF())
     return true;
 
@@ -9918,8 +9917,8 @@ verifyNarrowIntegerArgs(const SmallVectorImpl<ISD::OutputArg> &Outs,
     if (VT.isInteger()) {
       assert((VT == MVT::i32 || VT.getSizeInBits() >= 64) &&
              "Unexpected integer argument VT.");
-      if (VT == MVT::i32 &&
-          !Flags.isSExt() && !Flags.isZExt() && !Flags.isNoExt())
+      if (VT == MVT::i32 && !Flags.isSExt() && !Flags.isZExt() &&
+          !Flags.isNoExt())
         return false;
     }
   }

@@ -262,7 +262,6 @@ ErrorType Status::GetType() const {
       result = static_cast<const CloneableError &>(error).GetErrorType();
     else
       result = ErrorCodeToErrorType(error.convertToErrorCode());
-
   });
   return result;
 }

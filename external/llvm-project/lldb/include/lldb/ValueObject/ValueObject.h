@@ -1079,7 +1079,7 @@ protected:
   void SetPreferredDisplayLanguageIfNeeded(lldb::LanguageType);
 
 protected:
-  virtual void DoUpdateChildrenAddressType(ValueObject &valobj) {};
+  virtual void DoUpdateChildrenAddressType(ValueObject &valobj){};
 
 private:
   virtual CompilerType MaybeCalculateCompleteType();

@@ -184,16 +184,16 @@ namespace {
 } // end anonymous namespace
 
 static IntrinsicInst *getConvergenceEntry(BasicBlock &BB) {
-  auto *I = BB.getFirstNonPHI();
-  while (I) {
-    if (auto *IntrinsicCall = dyn_cast<ConvergenceControlInst>(I)) {
-      if (IntrinsicCall->isEntry()) {
-        return IntrinsicCall;
+    auto *I = BB.getFirstNonPHI();
+    while (I) {
+      if (auto *IntrinsicCall = dyn_cast<ConvergenceControlInst>(I)) {
+        if (IntrinsicCall->isEntry()) {
+          return IntrinsicCall;
+        }
       }
+      I = I->getNextNode();
     }
-    I = I->getNextNode();
-  }
-  return nullptr;
+    return nullptr;
 }
 
 /// Get or create a target for the branch from ResumeInsts.

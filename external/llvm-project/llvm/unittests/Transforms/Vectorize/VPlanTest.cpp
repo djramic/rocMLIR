@@ -732,7 +732,7 @@ TEST(VPBasicBlockTest, print) {
 
   LLVMContext C;
   auto *ScalarHeader = BasicBlock::Create(C, "scalar.header");
-  auto * ScalarHeaderVPBB = new VPIRBasicBlock(ScalarHeader);
+  auto *ScalarHeaderVPBB = new VPIRBasicBlock(ScalarHeader);
   VPBlockUtils::connectBlocks(VPBB2, ScalarHeaderVPBB);
   VPlan Plan(VPBB0, TC, VPBB1, ScalarHeaderVPBB);
   std::string FullDump;

@@ -242,7 +242,7 @@ public:
     Visit(E->getSelectedExpr());
   }
 };
-}  // end anonymous namespace.
+} // end anonymous namespace.
 
 //===----------------------------------------------------------------------===//
 //                                Utilities

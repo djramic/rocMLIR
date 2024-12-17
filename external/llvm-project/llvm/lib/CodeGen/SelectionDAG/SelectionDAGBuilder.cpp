@@ -12833,11 +12833,11 @@ void SelectionDAGBuilder::visitCallBrLandingPad(const CallInst &I) {
       // getRegistersForValue may produce 1 to many registers based on whether
       // the OpInfo.ConstraintVT is legal on the target or not.
       for (Register &Reg : OpInfo.AssignedRegs.Regs) {
-        Register OriginalDef = FollowCopyChain(MRI, InitialDef++);
-        if (Register::isPhysicalRegister(OriginalDef))
-          FuncInfo.MBB->addLiveIn(OriginalDef);
-        // Update the assigned registers to use the original defs.
-        Reg = OriginalDef;
+          Register OriginalDef = FollowCopyChain(MRI, InitialDef++);
+          if (Register::isPhysicalRegister(OriginalDef))
+            FuncInfo.MBB->addLiveIn(OriginalDef);
+          // Update the assigned registers to use the original defs.
+          Reg = OriginalDef;
       }
 
       SDValue V = OpInfo.AssignedRegs.getCopyFromRegs(

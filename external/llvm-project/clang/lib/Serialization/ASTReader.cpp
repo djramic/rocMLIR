@@ -3126,7 +3126,8 @@ ASTReader::ReadControlBlock(ModuleFile &F,
       // explicit name to file mappings. Also, we will still verify the
       // size/signature making sure it is essentially the same file but
       // perhaps in a different location.
-      if (ImportedKind == MK_PrebuiltModule || ImportedKind == MK_ExplicitModule)
+      if (ImportedKind == MK_PrebuiltModule ||
+          ImportedKind == MK_ExplicitModule)
         ImportedFile = PP.getHeaderSearchInfo().getPrebuiltModuleFileName(
             ImportedName, /*FileMapOnly*/ !IsImportingStdCXXModule);
 
@@ -3159,9 +3160,9 @@ ASTReader::ReadControlBlock(ModuleFile &F,
         Capabilities &= ~ARR_Missing;
 
       // Load the AST file.
-      auto Result = ReadASTCore(ImportedFile, ImportedKind, ImportLoc, &F,
-                                Loaded, StoredSize, StoredModTime,
-                                StoredSignature, Capabilities);
+      auto Result =
+          ReadASTCore(ImportedFile, ImportedKind, ImportLoc, &F, Loaded,
+                      StoredSize, StoredModTime, StoredSignature, Capabilities);
 
       // If we diagnosed a problem, produce a backtrace.
       bool recompilingFinalized =
@@ -3174,14 +3175,20 @@ ASTReader::ReadControlBlock(ModuleFile &F,
         Diag(diag::note_module_file_conflict);
 
       switch (Result) {
-      case Failure: return Failure;
+      case Failure:
+        return Failure;
         // If we have to ignore the dependency, we'll have to ignore this too.
       case Missing:
-      case OutOfDate: return OutOfDate;
-      case VersionMismatch: return VersionMismatch;
-      case ConfigurationMismatch: return ConfigurationMismatch;
-      case HadErrors: return HadErrors;
-      case Success: break;
+      case OutOfDate:
+        return OutOfDate;
+      case VersionMismatch:
+        return VersionMismatch;
+      case ConfigurationMismatch:
+        return ConfigurationMismatch;
+      case HadErrors:
+        return HadErrors;
+      case Success:
+        break;
       }
       break;
     }

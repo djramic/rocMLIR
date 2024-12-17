@@ -3316,7 +3316,7 @@ VPFirstOrderRecurrencePHIRecipe::computeCost(ElementCount VF,
                                              VPCostContext &Ctx) const {
   TTI::TargetCostKind CostKind = TTI::TCK_RecipThroughput;
   if (VF.isScalar())
-  return Ctx.TTI.getCFInstrCost(Instruction::PHI, CostKind);
+    return Ctx.TTI.getCFInstrCost(Instruction::PHI, CostKind);
 
   if (VF.isScalable() && VF.getKnownMinValue() == 1)
     return InstructionCost::getInvalid();

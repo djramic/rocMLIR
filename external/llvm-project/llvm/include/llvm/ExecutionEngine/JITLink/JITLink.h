@@ -396,12 +396,7 @@ const char *getLinkageName(Linkage L);
 ///   SideEffectsOnly -- Like hidden, but symbol can only be looked up once
 ///                      to trigger materialization of the containing graph.
 ///   Local -- Visible only within the LinkGraph.
-enum class Scope : uint8_t {
-  Default,
-  Hidden,
-  SideEffectsOnly,
-  Local
-};
+enum class Scope : uint8_t { Default, Hidden, SideEffectsOnly, Local };
 
 /// For debugging output.
 const char *getScopeName(Scope S);

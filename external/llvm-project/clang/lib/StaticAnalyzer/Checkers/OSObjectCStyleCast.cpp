@@ -63,14 +63,12 @@ static void emitDiagnostics(const BoundNodes &Nodes,
      << RD->getNameAsString() << "', or 'OSDynamicCast' followed by "
      << "a null check if unsure",
 
-  BR.EmitBasicReport(
-    ADC->getDecl(),
-    Checker,
-    /*Name=*/"OSObject C-Style Cast",
-    categories::SecurityError,
-    Diagnostics,
-    PathDiagnosticLocation::createBegin(CE, BR.getSourceManager(), ADC),
-    CE->getSourceRange());
+      BR.EmitBasicReport(
+          ADC->getDecl(), Checker,
+          /*Name=*/"OSObject C-Style Cast", categories::SecurityError,
+          Diagnostics,
+          PathDiagnosticLocation::createBegin(CE, BR.getSourceManager(), ADC),
+          CE->getSourceRange());
 }
 
 static decltype(auto) hasTypePointingTo(DeclarationMatcher DeclM) {

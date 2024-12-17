@@ -76,9 +76,9 @@ void rock::buildBufferizePipeline(OpPassManager &pm,
   TosaToLinalgNamedOptions tosaToLinalgNamedOptions;
   tosa::TosaValidationOptions validationOptions;
   validationOptions.level = tosa::TosaLevelEnum::None;
-  validationOptions.profile = {"bi","mi","mt"};
-  tosa::addTosaToLinalgPasses(pm, tosaToLinalgOptions,
-                              tosaToLinalgNamedOptions, validationOptions);
+  validationOptions.profile = {"bi", "mi", "mt"};
+  tosa::addTosaToLinalgPasses(pm, tosaToLinalgOptions, tosaToLinalgNamedOptions,
+                              validationOptions);
 
   // for tosa control flow
   /* rocmlir-opt --tosa-to-tensor --tosa-to-scf --tosa-to-arith
@@ -230,8 +230,8 @@ void rock::buildBackendPipeline(OpPassManager &pm,
   auto &gpuPm = pm.nest<gpu::GPUModuleOp>();
   gpuPm.addPass(amdgpu::createAmdgpuEmulateAtomicsPass({options.chip}));
   arith::ArithEmulateUnsupportedFloatsOptions floatEmuOpts;
-  floatEmuOpts.sourceTypeStrs.assign({"f8E4M3FNUZ", "f8E5M2FNUZ",
-                                      "f8E4M3FN", "f8E5M2"});
+  floatEmuOpts.sourceTypeStrs.assign(
+      {"f8E4M3FNUZ", "f8E5M2FNUZ", "f8E4M3FN", "f8E5M2"});
   floatEmuOpts.targetTypeStr = "f32";
   gpuPm.addPass(arith::createArithEmulateUnsupportedFloats(floatEmuOpts));
   ArithToAMDGPUConversionPassOptions arithOptions;

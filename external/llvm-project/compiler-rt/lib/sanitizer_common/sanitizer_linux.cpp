@@ -2821,9 +2821,11 @@ void CheckNoDeepBind(const char *filename, int flag) {
 
 #if SANITIZER_AMDGPU
 void PatchHsaRuntimeDlopenFlag(const char *filename, int &flag) {
-  if (filename && (internal_strstr(filename, "libamdhip64.so") ||
-      internal_strstr(filename, "libhsa-runtime64.so") ||
-      internal_strstr(filename, "libamdocl64.so")) && !(flag & RTLD_GLOBAL)) {
+  if (filename &&
+      (internal_strstr(filename, "libamdhip64.so") ||
+       internal_strstr(filename, "libhsa-runtime64.so") ||
+       internal_strstr(filename, "libamdocl64.so")) &&
+      !(flag & RTLD_GLOBAL)) {
     flag |= RTLD_GLOBAL;
     if (Verbosity() >= 2) {
       Printf(

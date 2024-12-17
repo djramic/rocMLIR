@@ -97,7 +97,8 @@ public:
   std::string SplitDwarfFile;
   std::string AsSecureLogFile;
 
-  // Used for codeview debug info. These will be set as compiler path and commandline arguments in LF_BUILDINFO
+  // Used for codeview debug info. These will be set as compiler path and
+  // commandline arguments in LF_BUILDINFO
   std::string Argv0;
   std::string CommandlineArgs;
 

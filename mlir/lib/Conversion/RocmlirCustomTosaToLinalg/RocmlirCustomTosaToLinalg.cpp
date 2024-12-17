@@ -56,8 +56,8 @@ LogicalResult UnsignedCastLoweringPattern::matchAndRewrite(
 
   Location loc = op.getLoc();
   auto outType = cast<RankedTensorType>(op.getResults().front().getType());
-  Type inElemType =
-      cast<RankedTensorType>(op.getInputList().front().getType()).getElementType();
+  Type inElemType = cast<RankedTensorType>(op.getInputList().front().getType())
+                        .getElementType();
   Type outElemType = outType.getElementType();
   Value emptyTensor = rewriter.create<tensor::EmptyOp>(
       loc, outType, /*dynamic_sizes=*/ValueRange{});

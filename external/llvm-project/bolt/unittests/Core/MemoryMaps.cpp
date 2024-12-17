@@ -136,7 +136,6 @@ TEST_P(MemoryMapsTester, MultipleSegmentsMismatchedBaseAddress) {
 
   DataAggregator DA("");
   BC->setFilename(Filename);
-  ASSERT_DEBUG_DEATH(
-      { Error Err = DA.preprocessProfile(*BC); },
-      "Base address on multiple segment mappings should match");
+  ASSERT_DEBUG_DEATH({ Error Err = DA.preprocessProfile(*BC); },
+                     "Base address on multiple segment mappings should match");
 }

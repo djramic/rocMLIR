@@ -11,6 +11,9 @@
 #include "Protocol.h"
 #include "Selection.h"
 #include "SourceCode.h"
+#include "support/Bracket.h"
+#include "support/DirectiveTree.h"
+#include "support/Token.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -22,9 +25,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Error.h"
-#include "support/Bracket.h"
-#include "support/DirectiveTree.h"
-#include "support/Token.h"
 #include <optional>
 #include <queue>
 #include <vector>

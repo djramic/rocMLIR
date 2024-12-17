@@ -431,7 +431,8 @@ struct LoopInterchange {
     bool Changed = false;
 
     // Ensure minimum loop nest depth.
-    assert(hasMinimumLoopDepth(LoopList) && "Loop nest does not meet minimum depth.");
+    assert(hasMinimumLoopDepth(LoopList) &&
+           "Loop nest does not meet minimum depth.");
 
     unsigned LoopNestDepth = LoopList.size();
     if (LoopNestDepth > MaxLoopNestDepth) {

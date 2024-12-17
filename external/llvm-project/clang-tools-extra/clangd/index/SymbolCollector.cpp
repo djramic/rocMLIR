@@ -428,8 +428,7 @@ private:
       CachePathToFrameworkSpelling.erase(Res.first);
       return std::nullopt;
     }
-    if (auto UmbrellaSpelling =
-            getFrameworkUmbrellaSpelling(HS, *HeaderPath)) {
+    if (auto UmbrellaSpelling = getFrameworkUmbrellaSpelling(HS, *HeaderPath)) {
       *CachedHeaderSpelling = *UmbrellaSpelling;
       return llvm::StringRef(*CachedHeaderSpelling);
     }

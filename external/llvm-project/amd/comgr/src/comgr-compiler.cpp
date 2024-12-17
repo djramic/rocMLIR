@@ -78,8 +78,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/WithColor.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/TargetParser/Host.h"
 
 #include "time-stat/ts-interface.h"
@@ -971,8 +971,9 @@ AMDGPUCompiler::addTargetIdentifierFlags(llvm::StringRef IdentStr,
   } else {
     // Triple and CPU
     Args.push_back("-target");
-    Args.push_back(Saver.save(Twine(Ident.Arch) + "-" + Ident.Vendor + "-" +
-                              Ident.OS).data());
+    Args.push_back(
+        Saver.save(Twine(Ident.Arch) + "-" + Ident.Vendor + "-" + Ident.OS)
+            .data());
     Args.push_back(Saver.save(Twine("-mcpu=") + GPUArch).data());
   }
 

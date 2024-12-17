@@ -764,7 +764,7 @@ protected:
 
   void fixupIVUsers(PHINode *OrigPhi, const InductionDescriptor &II,
                     Value *VectorTripCount, BasicBlock *MiddleBlock,
-                    VPTransformState &State) override {};
+                    VPTransformState &State) override{};
 };
 
 // A specialized derived class of inner loop vectorizer that performs

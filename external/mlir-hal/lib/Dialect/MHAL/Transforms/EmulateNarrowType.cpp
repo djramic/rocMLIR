@@ -111,8 +111,7 @@ void mlir::mhal::populateMHalNarrowTypeEmulationConversions(
   // We'll see uses of the old argument in extract_strided_metadata and
   // in ops that haven't been converted yet.
   auto materializer = [](OpBuilder &builder, MemRefType illegalType,
-                         ValueRange inputs,
-                         Location loc) -> Value {
+                         ValueRange inputs, Location loc) -> Value {
     if (inputs.size() != 1)
       return Value();
     Value input = inputs.front();

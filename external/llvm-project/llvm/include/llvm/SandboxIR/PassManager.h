@@ -185,7 +185,8 @@ public:
     OS << this->getName();
     OS << "(";
     // TODO: This should call Pass->print(OS) because Pass may be a PM.
-    interleave(Passes, OS, [&OS](auto &Pass) { OS << Pass->getName(); }, ",");
+    interleave(
+        Passes, OS, [&OS](auto &Pass) { OS << Pass->getName(); }, ",");
     OS << ")";
   }
   LLVM_DUMP_METHOD void dump() const override {

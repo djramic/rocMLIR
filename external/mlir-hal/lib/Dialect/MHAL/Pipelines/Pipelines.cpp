@@ -92,7 +92,7 @@ void mhal::buildGraphPipeline(OpPassManager &pm,
   /* mlir-opt --mhal-target-kernels
    */
   pm.addPass(mhal::createMHALTargetKernelsPass(
-    mhal::MHALTargetKernelsPassOptions{llvm::to_vector(options.targets)}));
+      mhal::MHALTargetKernelsPassOptions{llvm::to_vector(options.targets)}));
 }
 
 /// Collect target objects and package with host partitioned kernels

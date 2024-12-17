@@ -2013,7 +2013,7 @@ Instruction *InstCombinerImpl::foldICmpAndConstant(ICmpInst &Cmp,
                          m_APInt(Msk))) &&
         Msk->isMask() && C.ule(*Msk)) {
       APInt NewComperand = (C - *Addend) & *Msk;
-      Value* MaskA = Builder.CreateAnd(A, ConstantInt::get(A->getType(), *Msk));
+      Value *MaskA = Builder.CreateAnd(A, ConstantInt::get(A->getType(), *Msk));
       return new ICmpInst(
           Pred, MaskA,
           Constant::getIntegerValue(MaskA->getType(), NewComperand));

@@ -181,9 +181,7 @@ public:
 class DiagnosticIDs : public RefCountedBase<DiagnosticIDs> {
 public:
   /// The level of the diagnostic, after it has been through mapping.
-  enum Level {
-    Ignored, Note, Remark, Warning, Error, Fatal
-  };
+  enum Level { Ignored, Note, Remark, Warning, Error, Fatal };
 
 private:
   /// Information for uniquing and looking up custom diags.

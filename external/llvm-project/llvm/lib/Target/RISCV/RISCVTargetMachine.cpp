@@ -106,7 +106,8 @@ static cl::opt<bool> EnableMISchedLoadStoreClustering(
 
 static cl::opt<bool> EnablePostMISchedLoadStoreClustering(
     "riscv-postmisched-load-store-clustering", cl::Hidden,
-    cl::desc("Enable PostRA load and store clustering in the machine scheduler"),
+    cl::desc(
+        "Enable PostRA load and store clustering in the machine scheduler"),
     cl::init(true));
 
 static cl::opt<bool>
@@ -393,7 +394,7 @@ public:
     }
     return DAG;
   }
-  
+
   void addIRPasses() override;
   bool addPreISel() override;
   void addCodeGenPrepare() override;

@@ -371,9 +371,7 @@ public:
 
   /// Provide a get method, equivalent to [], but more useful with a
   /// pointer to this object.
-  const MCRegisterDesc &get(MCRegister Reg) const {
-    return operator[](Reg);
-  }
+  const MCRegisterDesc &get(MCRegister Reg) const { return operator[](Reg); }
 
   /// Returns the physical register number of sub-register "Index"
   /// for physical register RegNo. Return zero if the sub-register does not
@@ -467,7 +465,7 @@ public:
     return RegClassStrings + Class->NameIdx;
   }
 
-   /// Returns the encoding for Reg
+  /// Returns the encoding for Reg
   uint16_t getEncodingValue(MCRegister Reg) const {
     assert(Reg.id() < NumRegs &&
            "Attempting to get encoding for invalid register number!");

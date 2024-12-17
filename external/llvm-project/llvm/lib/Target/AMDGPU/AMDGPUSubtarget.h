@@ -174,9 +174,7 @@ public:
   // supported and the support for fake True16 instructions is removed.
   bool useRealTrue16Insts() const;
 
-  bool hasBF16ConversionInsts() const {
-    return HasBF16ConversionInsts;
-  }
+  bool hasBF16ConversionInsts() const { return HasBF16ConversionInsts; }
 
   bool hasMadMixInsts() const {
     return HasMadMixInsts;
@@ -188,9 +186,13 @@ public:
 
   bool hasFP4ConversionScaleInsts() const { return HasFP4ConversionScaleInsts; }
 
-  bool hasFP6BF6ConversionScaleInsts() const { return HasFP6BF6ConversionScaleInsts; }
+  bool hasFP6BF6ConversionScaleInsts() const {
+    return HasFP6BF6ConversionScaleInsts;
+  }
 
-  bool hasF16BF16ToFP6BF6ConversionScaleInsts() const { return HasF16BF16ToFP6BF6ConversionScaleInsts; }
+  bool hasF16BF16ToFP6BF6ConversionScaleInsts() const {
+    return HasF16BF16ToFP6BF6ConversionScaleInsts;
+  }
 
   bool hasCvtPkF16F32Inst() const { return HasCvtPkF16F32Inst; }
 

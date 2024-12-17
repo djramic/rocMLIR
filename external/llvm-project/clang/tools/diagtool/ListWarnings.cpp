@@ -97,4 +97,3 @@ int ListWarnings::run(unsigned int argc, char **argv, llvm::raw_ostream &out) {
 
   return 0;
 }
-

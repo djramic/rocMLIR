@@ -373,7 +373,7 @@ bool AMDGPUAsmPrinter::doFinalization(Module &M) {
   }
 
 // FIXME needs AMDGPUResource patch
-#if 0//<<<<<<< HEAD
+#if 0 //<<<<<<< HEAD
   // Assign expressions which can only be resolved when all other functions are
   // known.
   RI.finalize(OutContext);
@@ -393,7 +393,7 @@ bool AMDGPUAsmPrinter::doFinalization(Module &M) {
 
   RI.reset();
 
-#endif//>>>>>>> 7b9c6a7c3c64
+#endif //>>>>>>> 7b9c6a7c3c64
   return AsmPrinter::doFinalization(M);
 }
 

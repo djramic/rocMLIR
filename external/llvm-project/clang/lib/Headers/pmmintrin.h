@@ -135,8 +135,7 @@ _mm_hsub_ps(__m128 __a, __m128 __b)
 /// \returns A 128-bit vector of [4 x float] containing the moved and duplicated
 ///    values.
 static __inline__ __m128 __DEFAULT_FN_ATTRS_CONSTEXPR
-_mm_movehdup_ps(__m128 __a)
-{
+_mm_movehdup_ps(__m128 __a) {
   return __builtin_shufflevector((__v4sf)__a, (__v4sf)__a, 1, 1, 3, 3);
 }
 
@@ -156,8 +155,7 @@ _mm_movehdup_ps(__m128 __a)
 /// \returns A 128-bit vector of [4 x float] containing the moved and duplicated
 ///    values.
 static __inline__ __m128 __DEFAULT_FN_ATTRS_CONSTEXPR
-_mm_moveldup_ps(__m128 __a)
-{
+_mm_moveldup_ps(__m128 __a) {
   return __builtin_shufflevector((__v4sf)__a, (__v4sf)__a, 0, 0, 2, 2);
 }
 
@@ -257,8 +255,7 @@ _mm_hsub_pd(__m128d __a, __m128d __b)
 /// \returns A 128-bit vector of [2 x double] containing the moved and
 ///    duplicated values.
 static __inline__ __m128d __DEFAULT_FN_ATTRS_CONSTEXPR
-_mm_movedup_pd(__m128d __a)
-{
+_mm_movedup_pd(__m128d __a) {
   return __builtin_shufflevector((__v2df)__a, (__v2df)__a, 0, 0);
 }
 
