@@ -72,7 +72,7 @@ struct GemmRewritePattern : public OpConversionPattern<GemmOp> {
       : OpConversionPattern<GemmOp>(context), bufferDeps(bufferDeps) {}
 
   LogicalResult matchAndRewrite(GemmOp op, GemmOpAdaptor adaptor,
-                                ConversionPatternRewriter &b) const override;
+                                ConversionPatternRewriter &rw) const override;
 
   LogicalResult computeGridSize(ConversionPatternRewriter &rw, GemmOp op,
                                 Value a, Value b) const;
@@ -87,7 +87,7 @@ struct GemmRewritePattern : public OpConversionPattern<GemmOp> {
 struct AttentionRewritePattern : public OpConversionPattern<AttentionOp> {
   using OpConversionPattern<AttentionOp>::OpConversionPattern;
   LogicalResult matchAndRewrite(AttentionOp op, AttentionOpAdaptor adaptor,
-                                ConversionPatternRewriter &b) const override;
+                                ConversionPatternRewriter &rw) const override;
 
   LogicalResult computeGridSize(ConversionPatternRewriter &rw, AttentionOp op,
                                 Value queries, Value keys, Value values) const;
@@ -186,17 +186,9 @@ GemmRewritePattern::matchAndRewrite(GemmOp op, GemmOpAdaptor adaptor,
 
   const int64_t splitKFactor = op.getParams()->getSplitKFactor();
   if (splitKFactor > 1) {
-    const auto isAllowedTypeC =
-        elemTypeC == rw.getF32Type() || elemTypeC == rw.getF16Type();
-
     if (!bitEnumContainsAll(op.getFeatures(), GemmFeatures::atomic_add)) {
       return op.emitError(
           "Split-K `GemmOp` requires support of `atomic_add` hardware feature");
-    }
-
-    if (!isAllowedTypeC) {
-      return op.emitError(
-          "Split-K `GemmOp` currently supports only f32/f16 element types");
     }
 
     auto maybeSplitk =
