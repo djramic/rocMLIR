@@ -369,14 +369,8 @@ static LogicalResult runMLIRPasses(ModuleOp &module,
   }
 
   // Run host code lowering that makes the result of this operation accetable
-  // to mlir-runner. Explicitly aborts in the case of multiple mhal
-  // targets to prevent confusing behavior.
+  // to mlir-runner. Supports multi-arch targets.
   if (hostPipelineSet.contains("runner")) {
-    if (targetList.size() > 1) {
-      llvm::errs() << "Expected at most one mhal target when compling from "
-                      "within rocmlir-driver\n";
-      return failure();
-    }
     PassManager pm(module->getName(), PassManager::Nesting::Implicit);
     if (failed(applyPassManagerCLOptions(pm)))
       return failure();
@@ -386,7 +380,12 @@ static LogicalResult runMLIRPasses(ModuleOp &module,
     runnerOptions.enableCoroutines = hostAsyncCoroutines.getValue();
     SmallVector<std::string, 4> targetTypes{"GPU"};
     SmallVector<std::string, 4> targetArchs;
-    targetArchs.push_back(targetArch.str());
+    // Pass all target architectures for multi-arch support
+    if (!targetList.empty()) {
+      targetArchs = targetList;
+    } else {
+      targetArchs.push_back(targetArch.str());
+    }
     runnerOptions.targetTypes = targetTypes;
     runnerOptions.targetArchs = targetArchs;
     mhal::buildRunnerPipeline(pm, runnerOptions);
@@ -459,7 +458,10 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
-  module.print(output->os());
+  // Print with flags - verification already done by passes
+  OpPrintingFlags printFlags;
+  printFlags.assumeVerified();  
+  module.print(output->os(), printFlags);
   output->keep();
   return 0;
 }

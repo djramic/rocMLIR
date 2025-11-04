@@ -116,6 +116,11 @@ static llvm::cl::opt<std::string> arch(
     llvm::cl::desc("amdgpu architecture, eg: gfx803, gfx900, gfx906, gfx908"),
     llvm::cl::value_desc("GFX architecture string"), llvm::cl::init(""));
 
+static llvm::cl::opt<std::string> targets(
+    "targets",
+    llvm::cl::desc("Comma-separated list of target architectures for multi-arch support"),
+    llvm::cl::value_desc("arch1,arch2,..."), llvm::cl::init(""));
+
 static llvm::cl::opt<int> num_cu(
     "num_cu",
     llvm::cl::desc("Number of compute units, valid combinations include: "
@@ -966,6 +971,9 @@ struct GenParams {
   rock::GemmFeatures features = rock::GemmFeatures::none;
   std::optional<const rock::ConvGenerator::Config *> convConfig = std::nullopt;
   StringRef arch;
+  SmallVector<std::string, 4> targetArchs; // Multi-arch support: list of target architectures
+  bool setArchOnModule = true; // Whether to set mhal.arch on module (disable for multi-arch top-level)
+  bool setArchOnKernel = true; // Whether to set mhal.arch on kernel function (keep for validation)
   StringRef perfConfig;
 };
 
@@ -2347,9 +2355,18 @@ static func::FuncOp createGpuGemmKernel(ModuleOp module,
   OpBuilder b(ctx);
 
   // Set mhal.arch on module to make compilation pipeline work
+  // In multi-arch mode with validation, we skip this for top-level module
   StringAttr archAttr = b.getStringAttr(params.arch);
-  if (!module->hasAttr("mhal.arch"))
-    module->setAttr("mhal.arch", archAttr);
+  if (params.setArchOnModule) {
+    if (!module->hasAttr("mhal.arch")) {
+      module->setAttr("mhal.arch", archAttr);
+    } else {
+      // Verify existing arch matches expected arch
+      auto existingArch = module->getAttrOfType<StringAttr>("mhal.arch");
+      assert(existingArch && existingArch == archAttr &&
+             "Module arch attribute mismatch with params.arch");
+    }
+  }
 
   SmallVector<Type, 3> argTypes;
   getGemmTypes(params.types, argTypes,
@@ -2362,8 +2379,10 @@ static func::FuncOp createGpuGemmKernel(ModuleOp module,
            : b.getI64IntegerAttr(
                  rock::lookupArchInfo(archAttr.getValue()).minNumCU));
   SmallVector<NamedAttribute> funcAttrs = {
-      b.getNamedAttr("kernel", b.getUnitAttr()),
-      b.getNamedAttr("mhal.arch", archAttr)};
+      b.getNamedAttr("kernel", b.getUnitAttr())};
+  
+  if (params.setArchOnKernel)
+    funcAttrs.push_back(b.getNamedAttr("mhal.arch", archAttr));
 
   if (numCUAttr)
     funcAttrs.push_back(b.getNamedAttr("num_cu", numCUAttr));
@@ -2373,6 +2392,10 @@ static func::FuncOp createGpuGemmKernel(ModuleOp module,
   auto func =
       func::FuncOp::create(b, loc, isVerifier ? kernelNameVerifier : kernelName,
                            b.getFunctionType(flatTypes, {}), funcAttrs);
+
+  // Add function to module BEFORE creating body operations
+  // This ensures arch attribute can be found during verification
+  module.push_back(func);
 
   constexpr StringLiteral gName = "g", mName = "m", kName = "k", nName = "n";
   SmallVector<SmallVector<StringRef>> allArgNames;
@@ -2411,7 +2434,7 @@ static func::FuncOp createGpuGemmKernel(ModuleOp module,
                   rock::ScheduleVersionAttr::get(
                       b.getContext(), int(gemmScheduleVersion.getValue())));
 
-  module.push_back(func);
+  // Function already added to module earlier
   return func;
 }
 
@@ -3007,9 +3030,18 @@ static func::FuncOp createGpuAttentionKernel(ModuleOp module,
   OpBuilder builder(ctx);
 
   // Set mhal.arch on module to make compilation pipeline work
+  // In multi-arch mode with validation, we skip this for top-level module
   StringAttr archAttr = builder.getStringAttr(params.arch);
-  if (!module->hasAttr("mhal.arch"))
-    module->setAttr("mhal.arch", archAttr);
+  if (params.setArchOnModule) {
+    if (!module->hasAttr("mhal.arch")) {
+      module->setAttr("mhal.arch", archAttr);
+    } else {
+      // Verify existing arch matches expected arch
+      auto existingArch = module->getAttrOfType<StringAttr>("mhal.arch");
+      assert(existingArch && existingArch == archAttr &&
+             "Module arch attribute mismatch with params.arch");
+    }
+  }
 
   SmallVector<Type, 5> argTypes;
   getAttentionTypes(argTypes, params.types);
@@ -3020,8 +3052,10 @@ static func::FuncOp createGpuAttentionKernel(ModuleOp module,
       (num_cu.getNumOccurrences() > 0 ? builder.getI32IntegerAttr(num_cu)
                                       : nullptr);
   SmallVector<NamedAttribute, 3> funcAttrs = {
-      builder.getNamedAttr("kernel", builder.getUnitAttr()),
-      builder.getNamedAttr("mhal.arch", archAttr)};
+      builder.getNamedAttr("kernel", builder.getUnitAttr())};
+  
+  if (params.setArchOnKernel)
+    funcAttrs.push_back(builder.getNamedAttr("mhal.arch", archAttr));
 
   if (numCUAttr)
     funcAttrs.push_back(builder.getNamedAttr("num_cu", numCUAttr));
@@ -3030,6 +3064,10 @@ static func::FuncOp createGpuAttentionKernel(ModuleOp module,
   auto func = func::FuncOp::create(builder, loc, kernelName,
                                    builder.getFunctionType(flatArgTypes, {}),
                                    funcAttrs);
+
+  // Add function to module BEFORE creating body operations
+  // This ensures arch attribute can be found during verification
+  module.push_back(func);
 
   Block *block = func.addEntryBlock();
   builder.setInsertionPointToStart(block);
@@ -3157,7 +3195,7 @@ static func::FuncOp createGpuAttentionKernel(ModuleOp module,
     attention->setAttr("perf_config", builder.getStringAttr(params.perfConfig));
 
   func::ReturnOp::create(builder, loc);
-  module.push_back(func);
+  // Function already added to module earlier
   return func;
 }
 static func::FuncOp
@@ -3167,9 +3205,18 @@ createGpuConvElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
   OpBuilder builder(ctx);
 
   // Set mhal.arch on module to make compilation pipeline work
+  // In multi-arch mode with validation, we skip this for top-level module
   StringAttr archAttr = builder.getStringAttr(params.arch);
-  if (!module->hasAttr("mhal.arch"))
-    module->setAttr("mhal.arch", archAttr);
+  if (params.setArchOnModule) {
+    if (!module->hasAttr("mhal.arch")) {
+      module->setAttr("mhal.arch", archAttr);
+    } else {
+      // Verify existing arch matches expected arch
+      auto existingArch = module->getAttrOfType<StringAttr>("mhal.arch");
+      assert(existingArch && existingArch == archAttr &&
+             "Module arch attribute mismatch with params.arch");
+    }
+  }
 
   const auto *config = params.convConfig.value();
   SmallVector<Type, 5> argTypes;
@@ -3181,8 +3228,10 @@ createGpuConvElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
       (num_cu.getNumOccurrences() > 0 ? builder.getI32IntegerAttr(num_cu)
                                       : nullptr);
   SmallVector<NamedAttribute> funcAttrs = {
-      builder.getNamedAttr("kernel", builder.getUnitAttr()),
-      builder.getNamedAttr("mhal.arch", archAttr)};
+      builder.getNamedAttr("kernel", builder.getUnitAttr())};
+  
+  if (params.setArchOnKernel)
+    funcAttrs.push_back(builder.getNamedAttr("mhal.arch", archAttr));
 
   if (numCUAttr)
     funcAttrs.push_back(builder.getNamedAttr("num_cu", numCUAttr));
@@ -3191,6 +3240,10 @@ createGpuConvElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
   auto func = func::FuncOp::create(builder, loc, kernelName,
                                    builder.getFunctionType(flatArgTypes, {}),
                                    funcAttrs);
+
+  // Add function to module BEFORE creating body operations
+  // This ensures arch attribute can be found during verification
+  module.push_back(func);
 
   Block *block = func.addEntryBlock();
   builder.setInsertionPointToStart(block);
@@ -3270,7 +3323,7 @@ createGpuConvElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
     func->setAttr(rock::EnableSplitKForTuningAttr::getMnemonic(),
                   builder.getUnitAttr());
 
-  module.push_back(func);
+  // Function already added to module earlier
   return func;
 }
 
@@ -3281,9 +3334,18 @@ createGpuGemmElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
   OpBuilder builder(ctx);
 
   // Set mhal.arch on module to make compilation pipeline work
+  // In multi-arch mode with validation, we skip this for top-level module
   StringAttr archAttr = builder.getStringAttr(params.arch);
-  if (!module->hasAttr("mhal.arch"))
-    module->setAttr("mhal.arch", archAttr);
+  if (params.setArchOnModule) {
+    if (!module->hasAttr("mhal.arch")) {
+      module->setAttr("mhal.arch", archAttr);
+    } else {
+      // Verify existing arch matches expected arch
+      auto existingArch = module->getAttrOfType<StringAttr>("mhal.arch");
+      assert(existingArch && existingArch == archAttr &&
+             "Module arch attribute mismatch with params.arch");
+    }
+  }
 
   SmallVector<Type, 5> argTypes;
   getGemmElementwiseGemmTypes(argTypes, params.types);
@@ -3293,8 +3355,10 @@ createGpuGemmElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
       (num_cu.getNumOccurrences() > 0 ? builder.getI32IntegerAttr(num_cu)
                                       : nullptr);
   SmallVector<NamedAttribute> funcAttrs = {
-      builder.getNamedAttr("kernel", builder.getUnitAttr()),
-      builder.getNamedAttr("mhal.arch", archAttr)};
+      builder.getNamedAttr("kernel", builder.getUnitAttr())};
+  
+  if (params.setArchOnKernel)
+    funcAttrs.push_back(builder.getNamedAttr("mhal.arch", archAttr));
 
   if (numCUAttr)
     funcAttrs.push_back(builder.getNamedAttr("num_cu", numCUAttr));
@@ -3303,6 +3367,10 @@ createGpuGemmElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
   auto func = func::FuncOp::create(builder, loc, kernelName,
                                    builder.getFunctionType(flatArgTypes, {}),
                                    funcAttrs);
+
+  // Add function to module BEFORE creating body operations
+  // This ensures arch attribute can be found during verification
+  module.push_back(func);
 
   Block *block = func.addEntryBlock();
   builder.setInsertionPointToStart(block);
@@ -3359,7 +3427,7 @@ createGpuGemmElementwiseGemmKernel(ModuleOp module, const GenParams &params) {
     func->setAttr(rock::EnableSplitKForTuningAttr::getMnemonic(),
                   builder.getUnitAttr());
 
-  module.push_back(func);
+  // Function already added to module earlier
   return func;
 }
 
@@ -5005,7 +5073,9 @@ static void generateKernel(MLIRContext *context, GenParams &genParams,
 
     genParams.operation = operation;
     genParams.features = enabledFeatures;
-    genParams.arch = arch;
+    // Don't overwrite genParams.arch if already set (multi-arch mode)
+    if (genParams.arch.empty())
+      genParams.arch = arch;
     genParams.perfConfig = perfConfig;
     if (isGemm) {
       for (const auto &arg :
@@ -5183,6 +5253,86 @@ static void generateKernel(MLIRContext *context, GenParams &genParams,
   }
 }
 
+// RAII guard to temporarily change arch settings and restore them on scope exit
+struct ArchGuard {
+  std::string oldArch;
+  StringRef oldGenParamsArch;
+  GenParams &genParams;
+  
+  ArchGuard(GenParams &gp, const std::string &newArch) 
+      : oldArch(arch.getValue()), oldGenParamsArch(gp.arch), genParams(gp) {
+    arch.setValue(newArch);
+    genParams.arch = StringRef(newArch);
+  }
+  
+  ~ArchGuard() {
+    arch.setValue(oldArch);
+    genParams.arch = oldGenParamsArch;
+  }
+  
+  // Prevent copying
+  ArchGuard(const ArchGuard&) = delete;
+  ArchGuard& operator=(const ArchGuard&) = delete;
+};
+
+// Helper function to generate kernel for a specific architecture
+static void generateKernelForArch(MLIRContext *context, GenParams &genParams,
+                                  ModuleOp targetModule, const std::string &targetArch) {
+  // Use RAII guard to ensure arch state is restored even on exceptions
+  ArchGuard guard(genParams, targetArch);
+  
+  // Generate kernel in the target module
+  generateKernel(context, genParams, targetModule);
+}
+
+// Wrapper function to handle multi-arch generation
+static void generateKernelsForAllArchs(MLIRContext *context, GenParams &genParams,
+                                       ModuleOp module) {
+  if (genParams.targetArchs.empty()) {
+    // Single arch mode - use existing behavior
+    generateKernel(context, genParams, module);
+  } else if (genParams.targetArchs.size() == 1) {
+    // Single target specified via --targets
+    genParams.arch = StringRef(genParams.targetArchs[0]); // Safe reference to stable string
+    arch.setValue(genParams.targetArchs[0]); // Set global arch for generateKernel
+    generateKernel(context, genParams, module);
+  } else {
+    // Multi-arch mode - create sub-modules for each architecture
+    OpBuilder builder(context);
+    bool hasHostHarness = genHostHarness.getValue();
+    
+    // Set top-level module arch to first target architecture
+    // This allows rocmlir-driver to process the module correctly
+    OpBuilder archBuilder(context);
+    module->setAttr("mhal.arch", archBuilder.getStringAttr(genParams.targetArchs[0]));
+    
+    // If host harness is enabled, generate kernel at top level for validation
+    // The kernel function will also have mhal.arch set
+    if (hasHostHarness) {
+      genParams.arch = StringRef(genParams.targetArchs[0]);
+      arch.setValue(genParams.targetArchs[0]);
+      generateKernel(context, genParams, module);
+    }
+    
+    // Generate kernels in sub-modules for all architectures
+    // If validation is enabled, skip the first arch since it's already at top level
+    size_t startIdx = hasHostHarness ? 1 : 0;
+    for (size_t i = startIdx; i < genParams.targetArchs.size(); i++) {
+      const auto &targetArch = genParams.targetArchs[i];
+      builder.setInsertionPointToEnd(module.getBody());
+      auto subModule = builder.create<ModuleOp>(module.getLoc());
+      subModule->setAttr("mhal.arch", builder.getStringAttr(targetArch));
+      
+      // Generate kernel in the sub-module
+      generateKernelForArch(context, genParams, subModule, targetArch);
+    }
+    
+    // Set genParams.arch to first arch for any remaining host harness logic
+    genParams.arch = StringRef(genParams.targetArchs[0]);
+    arch.setValue(genParams.targetArchs[0]);
+  }
+}
+
 static void populateCloneHarnessLogic(ModuleOp module) {
   if (arch.getValue().empty()) {
     llvm::errs() << "--arch is not set\n";
@@ -5248,6 +5398,55 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MLIR Rock Dialect host generation\n");
 
+  // Parse target architectures for multi-arch support
+  llvm::SmallVector<std::string, 4> targetList;
+  std::set<std::string> seenTargets; // To detect duplicates
+  if (!targets.getValue().empty()) {
+    StringRef targetsStr = targets.getValue();
+    SmallVector<StringRef, 4> tokens;
+    targetsStr.split(tokens, ',');
+    for (auto str : tokens) {
+      auto target = str.trim();
+      if (!target.empty()) {
+        RocmDeviceName targetDevName;
+        if (failed(targetDevName.parse(target))) {
+          llvm::errs() << "Invalid target " << target << " in --targets\n";
+          exit(1);
+        }
+        SmallString<64> canonicalTarget;
+        targetDevName.getFullName(canonicalTarget);
+        std::string canonicalStr = std::string(canonicalTarget);
+        
+        // Check for duplicates
+        if (seenTargets.count(canonicalStr)) {
+          llvm::errs() << "Warning: duplicate target " << canonicalStr 
+                       << " ignored in --targets\n";
+          continue;
+        }
+        seenTargets.insert(canonicalStr);
+        targetList.push_back(std::move(canonicalStr));
+      }
+    }
+    
+    // Validate that at least one valid target was found
+    if (targetList.empty()) {
+      llvm::errs() << "Error: --targets specified but no valid architectures found\n";
+      exit(1);
+    }
+  }
+
+  // If --targets is not specified but --arch is, use --arch as single target
+  if (targetList.empty() && !arch.getValue().empty()) {
+    RocmDeviceName devName;
+    if (failed(devName.parse(arch.getValue()))) {
+      llvm::errs() << "Invalid architecture: " << arch.getValue() << "\n";
+      exit(1);
+    }
+    SmallString<64> canonicalArch;
+    devName.getFullName(canonicalArch);
+    targetList.push_back(std::string(canonicalArch));
+  }
+
   amdgpu::Chipset chipset;
   if (!arch.getValue().empty()) {
     FailureOr<amdgpu::Chipset> maybeChipset =
@@ -5290,6 +5489,15 @@ int main(int argc, char **argv) {
 
   OwningOpRef<ModuleOp> module;
   GenParams genParams;
+  
+  // Populate target architectures in genParams
+  genParams.targetArchs = targetList;
+  
+  // For multi-arch with validation, set genParams.arch to first target
+  // This will be used by host harness logic
+  if (!targetList.empty()) {
+    genParams.arch = targetList[0];
+  }
 
   if (!inputFilename.empty()) {
     module = readTestFile(inputFilename.getValue(), hasUserKernel, &context);
@@ -5305,7 +5513,7 @@ int main(int argc, char **argv) {
   if (genCloneHarness.getValue()) {
     populateCloneHarnessLogic(*module);
   } else if (!hasUserKernel) {
-    generateKernel(&context, genParams, *module);
+    generateKernelsForAllArchs(&context, genParams, *module);
   }
 
   if (emitSplitKSelectionLikelihood) {
