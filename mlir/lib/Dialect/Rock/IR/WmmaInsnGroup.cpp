@@ -147,13 +147,29 @@ getWmmaInsnMapGfx1250() {
 
 // Helper function to validate K coherence
 // Returns true if kPerBlock * kPack is sufficient for the given inputVectorLen
+// For gfx12+ (numReductions > 1), also ensures each thread gets enough elements
 static bool isKCoherent(int64_t inputVectorLen, int64_t kPack,
-                        int64_t kPackPerBlock) {
-  if (((kPackPerBlock * kPack) % inputVectorLen) != 0) {
+                        int64_t kPackPerBlock, int64_t numReductions = 1) {
+  int64_t kPerBlockTotal = kPackPerBlock * kPack;
+  if ((kPerBlockTotal % inputVectorLen) != 0) {
     LLVM_DEBUG(llvm::dbgs()
                << "kPerBlock*kpack needs to be a multiple of inputLen: "
-               << kPackPerBlock << " * " << kPack << " = "
-               << (kPackPerBlock * kPack) << " % " << inputVectorLen << "\n");
+               << kPackPerBlock << " * " << kPack << " = " << kPerBlockTotal
+               << " % " << inputVectorLen << "\n");
+    return false;
+  }
+  // For gfx12+ architectures, kpackPerThread is divided by numReductions.
+  // Ensure each thread has at least one full input vector after the division.
+  // kBasePerThread = (kpackPerThread * kPack) / inputVectorLen
+  //                = (kpackPerBlock / numReductions * kPack) / inputVectorLen
+  // For kBasePerThread >= 1:
+  //   kpackPerBlock * kPack >= numReductions * inputVectorLen
+  if (kPerBlockTotal < numReductions * inputVectorLen) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "kPerBlock*kpack too small for numReductions: "
+               << kPerBlockTotal << " < " << numReductions << " * "
+               << inputVectorLen << " = " << (numReductions * inputVectorLen)
+               << "\n");
     return false;
   }
   return true;
@@ -197,6 +213,12 @@ FailureOr<WmmaInsn> WmmaInsn::select(mlir::Type elementTypeA,
   if (isGfx1250) {
     auto &gfx1250Map = getWmmaInsnMapGfx1250();
 
+    // For gfx1250 (post-gfx12), each thread handles a fraction of K values
+    // because kpackPerThread = kpackPerBlock / numReductions.
+    // numReductions = waveSize / mPerAccel = 32 / 16 = 2 for WMMA.
+    // We need to account for this when checking K coherence.
+    constexpr int64_t gfx1250NumReductions = 2;
+
     // FP8/BF8 types have multiple K options and we need to select the best one.
     // We will always try to select the largest K value that is coherent with
     // the KPack and KPackPerBlock, and then fall back to the smaller values
@@ -207,7 +229,8 @@ FailureOr<WmmaInsn> WmmaInsn::select(mlir::Type elementTypeA,
         auto it = gfx1250Map.find({typeId, k});
         if (it != gfx1250Map.end()) {
           const WmmaInsnInfo *info = &it->second;
-          if (isKCoherent(info->inputVectorLen, kPack, kPackPerBlock)) {
+          if (isKCoherent(info->inputVectorLen, kPack, kPackPerBlock,
+                          gfx1250NumReductions)) {
             insnInfo = info;
             selectedKDim = k; // Extract K from the key
             LLVM_DEBUG(llvm::dbgs() << "Selected gfx1250 instruction: "
@@ -231,16 +254,33 @@ FailureOr<WmmaInsn> WmmaInsn::select(mlir::Type elementTypeA,
 
       auto it = gfx1250Map.find({typeId, k});
       if (it != gfx1250Map.end()) {
-        insnInfo = &it->second;
-        selectedKDim = k;
-        LLVM_DEBUG(llvm::dbgs() << "Selected gfx1250 instruction: "
-                                << insnInfo->insn << "\n");
+        const WmmaInsnInfo *info = &it->second;
+        // Validate that kPackPerBlock * kPack is coherent with both
+        // inputVectorLen AND kDim. The WMMA instruction requires the K
+        // dimension to be processed in chunks of kDim, so we must ensure
+        // kPackPerBlock * kPack is a multiple of kDim.
+        int64_t kPerBlockTotal = kPackPerBlock * kPack;
+        if (isKCoherent(info->inputVectorLen, kPack, kPackPerBlock,
+                        gfx1250NumReductions) &&
+            (kPerBlockTotal % k == 0)) {
+          insnInfo = info;
+          selectedKDim = k;
+          LLVM_DEBUG(llvm::dbgs() << "Selected gfx1250 instruction: "
+                                  << insnInfo->insn << "\n");
+        } else {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "gfx1250 WMMA instruction not coherent: "
+                     << "kPackPerBlock=" << kPackPerBlock << " kPack=" << kPack
+                     << " kDim=" << k << "\n");
+        }
       }
     }
   }
 
   // Use gfx12 only if we don't have a selected instruction and not gfx11
-  if (!insnInfo && !isGfx11) {
+  // and not gfx1250 (gfx1250 should not fall back to gfx12 instructions
+  // as they have different K dimension requirements)
+  if (!insnInfo && !isGfx11 && !isGfx1250) {
     auto &gfx12Map = getWmmaInsnMapGfx12();
     auto it = gfx12Map.find({typeId, 16});
     if (it != gfx12Map.end()) {

@@ -42,6 +42,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "llvm/Support/LogicalResult.h"
 #include <cstdint>
 
@@ -58,6 +59,29 @@ using namespace mlir;
 using namespace mlir::arith;
 using namespace mlir::rock;
 using mlir::gpu::AddressSpace;
+
+/// Check if a value originates from a memref::AllocOp by tracing through
+/// rock::TransformOp chains. Returns true if the value is backed by an
+/// allocated buffer (not a function argument).
+static bool originatesFromAlloc(Value v) {
+  while (v) {
+    Operation *defOp = v.getDefiningOp();
+    if (!defOp) {
+      // Value is a block argument (e.g., function argument) - not from alloc
+      return false;
+    }
+    if (isa<memref::AllocOp>(defOp)) {
+      return true;
+    }
+    if (auto transformOp = dyn_cast<rock::TransformOp>(defOp)) {
+      v = transformOp.getInput();
+      continue;
+    }
+    // Unknown defining op - conservatively return false
+    return false;
+  }
+  return false;
+}
 
 namespace {
 struct RockBlockwiseLoadTileToThreadwisePass
@@ -298,19 +322,24 @@ class LoweringBlockwiseLoadTileOp final
                                    /*ldsTransposeConfig=*/nullptr);
 
       if (rock::isGlobalPrefetchSupported(arch)) {
-        // add one to k_loop to prefetch next iteration
-        SmallVector<Value> indicesNext(indices.begin(), indices.end());
-        Value one = b.createOrFold<arith::ConstantIndexOp>(loc, 1);
-        indicesNext[0] =
-            arith::AddIOp::create(b, loc, indicesNext[0], one).getResult();
+        // Skip prefetch if source originates from an allocated buffer (e.g.,
+        // intermediate dequantize buffer). Prefetching from such buffers
+        // prevents buffer elimination and causes device-side malloc issues.
+        if (!originatesFromAlloc(source)) {
+          // add one to k_loop to prefetch next iteration
+          SmallVector<Value> indicesNext(indices.begin(), indices.end());
+          Value one = b.createOrFold<arith::ConstantIndexOp>(loc, 1);
+          indicesNext[0] =
+              arith::AddIOp::create(b, loc, indicesNext[0], one).getResult();
 
-        // it's acceptable if the indices are out of bounds because we use
-        // GLOBAL_PREFETCH_B8 with Speculative Prefetch. See llvm.prefetch
-        // documentation in AMDGPUUsage.rst
-        rock::ThreadwisePrefetchOp::create(b, loc, wrappedSource,
-                                           /*extraViews=*/b.getArrayAttr({}),
-                                           /*extraIndices=*/indicesNext,
-                                           forceUnroll, true);
+          // it's acceptable if the indices are out of bounds because we use
+          // GLOBAL_PREFETCH_B8 with Speculative Prefetch. See llvm.prefetch
+          // documentation in AMDGPUUsage.rst
+          rock::ThreadwisePrefetchOp::create(b, loc, wrappedSource,
+                                             /*extraViews=*/b.getArrayAttr({}),
+                                             /*extraIndices=*/indicesNext,
+                                             forceUnroll, true);
+        }
       }
       if (stageGlobalReadNew)
         rock::YieldOp::create(b, loc);

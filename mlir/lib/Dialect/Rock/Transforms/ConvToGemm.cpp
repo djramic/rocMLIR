@@ -24,9 +24,11 @@
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Rock/IR/AmdArchDb.h"
 #include "mlir/Dialect/Rock/IR/GemmSize.h"
 #include "mlir/Dialect/Rock/IR/GetRockInfo.h"
 #include "mlir/Dialect/Rock/IR/Rock.h"
+#include "mlir/Dialect/Rock/IR/WmmaInsnGroup.h"
 #include "mlir/Dialect/Rock/IR/RockConvInterface.h"
 #include "mlir/Dialect/Rock/IR/TransformMapBuilder.h"
 #include "mlir/Dialect/Rock/Passes.h"
@@ -1159,7 +1161,20 @@ commonConvRewrite(T op, PatternRewriter &b, ConvolutionContext &ctx,
     std::optional<GemmSize> maybeGemmExtraPad;
 
     if (tuningParams) {
-      maybeGemmExtraPad = requiredPadding(tuningParams, gemmSize);
+      // Compute kDim for WMMA to ensure proper K-dimension padding
+      int64_t kDim = 0;
+      if (auto wmmaParams = dyn_cast<WmmaGemmParamsAttr>(tuningParams)) {
+        StringRef arch = rock::getArchValue(op);
+        auto archInfo = rock::lookupArchInfo(arch);
+        auto wmmaResult = WmmaInsn::select(
+            dataType, dataType, archInfo.waveSize, arch,
+            wmmaParams.getMPerWave(), wmmaParams.getNPerWave(),
+            wmmaParams.getKpack(), wmmaParams.getKpackPerBlock());
+        if (succeeded(wmmaResult)) {
+          kDim = wmmaResult->kDim;
+        }
+      }
+      maybeGemmExtraPad = requiredPadding(tuningParams, gemmSize, 1, 1, 1, kDim);
     } else {
       // We don't know if this'll be a padding kernel, so we can't promise an
       // unfold or rely on atomic add, and so set the extraPad to a nonsense but

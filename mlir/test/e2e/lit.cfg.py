@@ -80,6 +80,25 @@ llvm_config.with_environment('PATH', config.llvm_tools_dir, append_path=True)
 tool_dirs = [config.mlir_rock_tools_dir, config.mlir_tools_dir, config.llvm_tools_dir]
 tools = ['rocmlir-opt']
 
+# Create mlir-runner wrapper with HSA simulator LD_PRELOAD
+# This is needed because LD_PRELOAD must be set BEFORE the process starts
+_simulator_lib = "/workspaces/jitcu_docker/_builds/Debug/lib/libhsakmtmodel.so"
+_simulator_topology = "/workspaces/jitcu_docker/topology"
+if os.path.exists(_simulator_lib):
+    _mlir_runner_path = os.path.join(config.llvm_tools_dir, 'mlir-runner')
+    _mlir_runner_with_sim = (
+        f'env LD_PRELOAD={_simulator_lib} '
+        f'HSA_MODEL_LIB={_simulator_lib} '
+        f'HSA_MODEL_TOPOLOGY={_simulator_topology} '
+        f'HSA_ENABLE_SDMA=0 HSA_ENABLE_INTERRUPT=0 '
+        f'{_mlir_runner_path}'
+    )
+    # Add mlir-runner substitution with simulator wrapper
+    tools.append(ToolSubst('mlir-runner', _mlir_runner_with_sim, unresolved='ignore'))
+else:
+    # No simulator - use regular mlir-runner
+    tools.append(ToolSubst('mlir-runner', os.path.join(config.llvm_tools_dir, 'mlir-runner'), unresolved='ignore'))
+
 # The following tools are optional
 tools.extend([
     ToolSubst('%PYTHON', config.python_executable, unresolved='ignore'),

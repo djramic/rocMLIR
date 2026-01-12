@@ -24,4 +24,5 @@ add_rocmlir_dialect_library(MLIRRockUtility
   MLIRLLVMDialect
 )
 
-add_subdirectory(Bindings)
+# Temporarily disabled - requires Python3 dev headers
+# add_subdirectory(Bindings)

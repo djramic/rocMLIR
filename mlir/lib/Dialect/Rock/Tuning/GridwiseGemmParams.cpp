@@ -66,9 +66,16 @@ std::optional<GemmSize> mlir::rock::calculatePadding(int64_t kPerBlock,
                                                      int64_t mPerBlock,
                                                      int64_t nPerBlock,
                                                      const GemmSize &gemmSize,
-                                                     int64_t kPack) {
-  int64_t kExtra = (kPerBlock * kPack) -
-                   math_util::mod_1_to_n(gemmSize.k, kPerBlock * kPack);
+                                                     int64_t kPack,
+                                                     int64_t kDim) {
+  // Calculate effective K alignment requirement
+  int64_t kAlignment = kPerBlock * kPack;
+  // If kDim is specified (e.g., WMMA instruction K dimension), ensure K is
+  // aligned to the LCM of both requirements
+  if (kDim > 0 && kDim != kAlignment) {
+    kAlignment = math_util::lcm(kAlignment, kDim);
+  }
+  int64_t kExtra = kAlignment - math_util::mod_1_to_n(gemmSize.k, kAlignment);
   int64_t mExtra = mPerBlock - math_util::mod_1_to_n(gemmSize.m, mPerBlock);
   int64_t nExtra = nPerBlock - math_util::mod_1_to_n(gemmSize.n, nPerBlock);
   if (mExtra == 0 && kExtra == 0 && nExtra == 0)
@@ -94,7 +101,8 @@ std::optional<GemmSize> mlir::rock::requiredPadding(Attribute params,
                                                     GemmSize gemmSize,
                                                     int64_t mulByKPerBlock,
                                                     int64_t mulByMPerBlock,
-                                                    int64_t mulByNPerBlock) {
+                                                    int64_t mulByNPerBlock,
+                                                    int64_t kDim) {
   int64_t kPerBlock, mPerBlock, nPerBlock;
   int64_t kPack = 1;
   if (auto generalParams = dyn_cast<GeneralGemmParamsAttr>(params)) {
@@ -112,7 +120,7 @@ std::optional<GemmSize> mlir::rock::requiredPadding(Attribute params,
   }
   return calculatePadding(kPerBlock * mulByKPerBlock,
                           mPerBlock * mulByMPerBlock,
-                          nPerBlock * mulByNPerBlock, gemmSize, kPack);
+                          nPerBlock * mulByNPerBlock, gemmSize, kPack, kDim);
 }
 
 int64_t mlir::rock::obtainBlockSize(int64_t waveSize, int64_t mPerBlock,

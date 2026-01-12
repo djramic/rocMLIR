@@ -26,6 +26,7 @@
 #include "mlir/Dialect/Rock/IR/GemmSize.h"
 #include "mlir/Dialect/Rock/IR/GetRockInfo.h"
 #include "mlir/Dialect/Rock/IR/Rock.h"
+#include "mlir/Dialect/Rock/IR/WmmaInsnGroup.h"
 #include "mlir/Dialect/Rock/IR/RockGemmGemmWrapperInterface.h"
 #include "mlir/Dialect/Rock/IR/RockTypes.h"
 #include "mlir/Dialect/Rock/IR/TransformMapBuilder.h"
@@ -569,10 +570,37 @@ static LogicalResult commonAttentionGemmElmtGemm(
   GemmSize gemm1Size(/*g=*/aShape[0], /*m=*/cShape[2],
                      /*k=*/cShape[1],
                      /*n=*/aShape[2]);
-  GemmSize gemm0ExtraPad = requiredPadding(params0, gemm0Size, 1, splitKVNum)
-                               .value_or(GemmSize{0, 0, 0, 0});
-  GemmSize gemm1ExtraPad = requiredPadding(params1, gemm1Size, splitKVNum)
-                               .value_or(GemmSize{0, 0, 0, 0});
+
+  // Compute kDim for WMMA to ensure proper K-dimension padding
+  auto computeWmmaKDim = [&op](Attribute params, Value matA,
+                               Value matB) -> int64_t {
+    if (auto wmmaParams = dyn_cast<WmmaGemmParamsAttr>(params)) {
+      Type aElemType = cast<MemRefType>(matA.getType()).getElementType();
+      Type bElemType = cast<MemRefType>(matB.getType()).getElementType();
+      StringRef arch = rock::getArchValue(op);
+      auto archInfo = rock::lookupArchInfo(arch);
+      auto wmmaResult = WmmaInsn::select(
+          aElemType, bElemType, archInfo.waveSize, arch,
+          wmmaParams.getMPerWave(), wmmaParams.getNPerWave(),
+          wmmaParams.getKpack(), wmmaParams.getKpackPerBlock());
+      if (succeeded(wmmaResult)) {
+        return wmmaResult->kDim;
+      }
+    }
+    return 0;
+  };
+
+  int64_t gemm0KDim = computeWmmaKDim(params0, a, b);
+  // For the second GEMM in attention, the inputs are softmax_output and V
+  // Both have the same type as Values (c), so we pass c for both types
+  int64_t gemm1KDim = computeWmmaKDim(params1, c, c);
+
+  GemmSize gemm0ExtraPad =
+      requiredPadding(params0, gemm0Size, 1, splitKVNum, 1, gemm0KDim)
+          .value_or(GemmSize{0, 0, 0, 0});
+  GemmSize gemm1ExtraPad =
+      requiredPadding(params1, gemm1Size, splitKVNum, 1, 1, gemm1KDim)
+          .value_or(GemmSize{0, 0, 0, 0});
 
   a = padMatrix(a, rw, loc, "gemm0K", gemm0ExtraPad.k, "gemm0N",
                 gemm0ExtraPad.n);
@@ -759,8 +787,24 @@ GemmRewritePattern::matchAndRewrite(GemmOp op, GemmOpAdaptor adaptor,
   GemmSize size(/*g=*/aShape[0], /*m=*/aShape[2], /*k=*/aShape[1],
                 /*n=*/bShape[2]);
 
+  // Compute kDim for WMMA to ensure proper K-dimension padding
+  int64_t kDim = 0;
+  if (auto wmmaParams = dyn_cast<WmmaGemmParamsAttr>(params)) {
+    Type aElemType = cast<MemRefType>(a.getType()).getElementType();
+    Type bElemType = cast<MemRefType>(b.getType()).getElementType();
+    StringRef arch = rock::getArchValue(op);
+    auto archInfo = rock::lookupArchInfo(arch);
+    auto wmmaResult = WmmaInsn::select(
+        aElemType, bElemType, archInfo.waveSize, arch, wmmaParams.getMPerWave(),
+        wmmaParams.getNPerWave(), wmmaParams.getKpack(),
+        wmmaParams.getKpackPerBlock());
+    if (succeeded(wmmaResult)) {
+      kDim = wmmaResult->kDim;
+    }
+  }
+
   GemmSize extraPad =
-      requiredPadding(params, size).value_or(GemmSize{0, 0, 0, 0});
+      requiredPadding(params, size, 1, 1, 1, kDim).value_or(GemmSize{0, 0, 0, 0});
 
   a = padMatrix(a, rw, loc, "gemmK", extraPad.k, "gemmM", extraPad.m);
   b = padMatrix(b, rw, loc, "gemmK", extraPad.k, "gemmN", extraPad.n);

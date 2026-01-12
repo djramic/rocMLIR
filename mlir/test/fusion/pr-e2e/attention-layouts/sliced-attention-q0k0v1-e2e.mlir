@@ -7,11 +7,11 @@
 // EMITKEY: -t f16 -transQ false -transK false -transV true -transO false -causal false -return_lse false -split_kv 1 -num_heads_q 1 -num_heads_kv 1 -g 1 -seq_len_q 32 -seq_len_k 64 -head_dim_qk 16 -head_dim_v 8
 
 // VECTORIZATION: qVectorDim: GemmDimension::K
-// VECTORIZATION-NEXT: qVectorLen: 4
+// VECTORIZATION-NEXT: qVectorLen: 8
 // VECTORIZATION: kVectorDim: GemmDimension::MorN
-// VECTORIZATION-NEXT: kVectorLen: 8
+// VECTORIZATION-NEXT: kVectorLen: 2
 // VECTORIZATION: vVectorDim: GemmDimension::K
-// VECTORIZATION-NEXT: vVectorLen: 4
+// VECTORIZATION-NEXT: vVectorLen: 8
 
 module {
   func.func @test(%arg0: !migraphx.shaped<1x32x32xf16, 1024x1x32>, %arg1: !migraphx.shaped<1x64x16xf16, 1024x1x64>, %arg2: !migraphx.shaped<1x64x8xf16, 512x1x64>) -> !migraphx.shaped<1x32x8xf16, 256x8x1> {

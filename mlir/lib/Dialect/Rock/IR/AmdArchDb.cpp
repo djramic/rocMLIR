@@ -114,14 +114,14 @@ static constexpr AmdArchInfo
               /*hasFp8ConversionInstrs=*/false,
               /*hasOcpFp8ConversionInstrs=*/true, /*hasScaledGemm=*/false,
               /*maxNumXCC=*/1, /*hasLdsTransposeLoad=*/false),
-    // TODO: update with right information
+    // Updated from rocminfo for gfx1250
     gfx1250Info(GemmFeatures::dot | GemmFeatures::atomic_add |
                     GemmFeatures::atomic_fmax_f32 | GemmFeatures::wmma |
                     GemmFeatures::atomic_add_f16 |
                     GemmFeatures::atomic_add_bf16,
                 /*waveSize=*/32, /*maxWavesPerEU*/ 16, /*totalSGPRPerEU*/ 800,
-                /*totalVGPRPerEU*/ 1536, /*totalSharedMemPerCU*/ 131072,
-                /*maxSharedMemPerWG*/ 65536, /*numEUPerCU=*/4, /*minNumCU=*/12,
+                /*totalVGPRPerEU*/ 1536, /*totalSharedMemPerCU*/ 327680,
+                /*maxSharedMemPerWG*/ 65536, /*numEUPerCU=*/2, /*minNumCU=*/96,
                 /*hasFp8ConversionInstrs=*/false,
                 /*hasOcpFp8ConversionInstrs=*/true, /*hasScaledGemm=*/false,
                 /*maxNumXCC=*/1, /*hasLdsTransposeLoad=*/false);

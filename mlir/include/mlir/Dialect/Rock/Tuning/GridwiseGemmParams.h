@@ -37,11 +37,14 @@ struct InitParams {
 };
 
 // This core function to calculate the required padding amount
-// given a gemm size.
+// given a gemm size. The kDim parameter specifies the minimum K alignment
+// required by the accelerator instruction (e.g., WMMA kDim=32 for f16).
+// When kDim > 0, padding ensures K is aligned to LCM(kPerBlock*kPack, kDim).
 std::optional<GemmSize> calculatePadding(int64_t kPerBlock, int64_t mPerBlock,
                                          int64_t nPerBlock,
                                          const GemmSize &gemmSize,
-                                         int64_t kPack = 1);
+                                         int64_t kPack = 1,
+                                         int64_t kDim = 0);
 
 GemmSize calculatePaddedGemmSize(const InitParams &params, GemmSize gemmSize,
                                  int64_t kPack = 1);
@@ -50,11 +53,14 @@ GemmSize calculatePaddedGemmSize(const InitParams &params, GemmSize gemmSize,
 /// a given gemm size requires. Returns None if no padding is needed. The
 /// values in the returned gemm context represent the number of 0s that need to
 /// be added to the given dimension. The mulBy* arguments multiply the
-/// corresponding dimension of the attributes.
+/// corresponding dimension of the attributes. The kDim parameter specifies
+/// the minimum K alignment required by the accelerator instruction (e.g., 32
+/// for WMMA f16 on gfx1250).
 std::optional<GemmSize> requiredPadding(Attribute params, GemmSize gemmSize,
                                         int64_t mulByKPerBlock = 1,
                                         int64_t mulByMPerBlock = 1,
-                                        int64_t mulByNPerBlock = 1);
+                                        int64_t mulByNPerBlock = 1,
+                                        int64_t kDim = 0);
 
 int64_t obtainBlockSize(int64_t waveSize, int64_t mPerBlock, int64_t nPerBlock,
                         int64_t mPerWave, int64_t nPerWave);

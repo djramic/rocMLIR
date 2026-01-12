@@ -39,7 +39,79 @@ config.substitutions.append(('%rocmlir_gen_flags', config.rocmlir_gen_flags))
 config.substitutions.append(('%arch', config.arch))
 config.substitutions.append(('%pv', config.populate_validation))
 
-llvm_config.with_system_environment(['HOME', 'INCLUDE', 'LIB', 'TMP', 'TEMP'])
+# Pass through HSA simulator environment variables for ROCm testing
+llvm_config.with_system_environment([
+    'HOME', 'INCLUDE', 'LIB', 'TMP', 'TEMP',
+    # HSA simulator variables - critical for running tests on simulator
+    'HSA_MODEL_LIB', 'HSA_MODEL_TOPOLOGY',
+    'HSA_ENABLE_SDMA', 'HSA_ENABLE_INTERRUPT',
+    'LD_LIBRARY_PATH', 'LD_PRELOAD'
+])
+
+# Set up HSA simulator environment if not already configured
+# This ensures tests can run on the simulator even if the shell environment
+# doesn't have these variables pre-set
+def _setup_hsa_for_tests():
+    # Try multiple possible simulator locations
+    possible_sim_libs = [
+        "/workspaces/jitcu_docker/_builds/Debug/lib/libhsakmtmodel.so",
+        os.path.expanduser("~/mi450_simulator/libhsakmtmodel.so"),
+    ]
+    possible_topologies = [
+        "/workspaces/jitcu_docker/topology",
+        os.path.expanduser("~/mi450_simulator/topology/mi450"),
+    ]
+    
+    simulator_lib = None
+    simulator_topology = None
+    
+    for lib_path in possible_sim_libs:
+        if os.path.exists(lib_path):
+            simulator_lib = lib_path
+            break
+    
+    for topo_path in possible_topologies:
+        if os.path.exists(topo_path):
+            simulator_topology = topo_path
+            break
+    
+    if simulator_lib is None:
+        # Fallback to original paths
+        simulator_lib = os.path.expanduser("~/mi450_simulator/libhsakmtmodel.so")
+        simulator_topology = os.path.expanduser("~/mi450_simulator/topology/mi450")
+    
+    if os.path.exists(simulator_lib):
+        # Use llvm_config.with_environment for proper env inheritance
+        sim_dir = os.path.dirname(simulator_lib)
+        rocm_lib = '/opt/rocm/lib'
+        
+        # Set simulator env variables using llvm_config
+        llvm_config.with_environment('HSA_MODEL_LIB', simulator_lib)
+        llvm_config.with_environment('HSA_MODEL_TOPOLOGY', simulator_topology)
+        llvm_config.with_environment('HSA_ENABLE_SDMA', '0')
+        llvm_config.with_environment('HSA_ENABLE_INTERRUPT', '0')
+        llvm_config.with_environment('LD_LIBRARY_PATH', sim_dir, append_path=True)
+        llvm_config.with_environment('LD_LIBRARY_PATH', rocm_lib, append_path=True)
+        llvm_config.with_environment('LD_PRELOAD', simulator_lib)
+        
+        # Also set in config.environment for compatibility
+        config.environment['HSA_MODEL_LIB'] = simulator_lib
+        config.environment['HSA_MODEL_TOPOLOGY'] = simulator_topology
+        config.environment['HSA_ENABLE_SDMA'] = '0'
+        config.environment['HSA_ENABLE_INTERRUPT'] = '0'
+        config.environment['LD_PRELOAD'] = simulator_lib
+
+_setup_hsa_for_tests()
+
+# Debug: print HSA environment variables to stderr
+import sys
+print("=== HSA Environment in lit.cfg.py ===", file=sys.stderr)
+print(f"HSA_MODEL_LIB: {config.environment.get('HSA_MODEL_LIB', 'NOT SET')}", file=sys.stderr)
+print(f"HSA_MODEL_TOPOLOGY: {config.environment.get('HSA_MODEL_TOPOLOGY', 'NOT SET')}", file=sys.stderr)
+print(f"HSA_ENABLE_SDMA: {config.environment.get('HSA_ENABLE_SDMA', 'NOT SET')}", file=sys.stderr)
+print(f"HSA_ENABLE_INTERRUPT: {config.environment.get('HSA_ENABLE_INTERRUPT', 'NOT SET')}", file=sys.stderr)
+print(f"LD_PRELOAD: {config.environment.get('LD_PRELOAD', 'NOT SET')}", file=sys.stderr)
+print("=====================================", file=sys.stderr)
 
 ##############
 # FIXME: adding a path to the environment isn't appearing to work as
@@ -81,6 +153,22 @@ llvm_config.with_environment('PATH', config.llvm_tools_dir, append_path=True)
 
 tool_dirs = [config.mlir_rock_tools_dir, config.mlir_tools_dir, config.llvm_tools_dir]
 tools = ['rocmlir-opt', 'rocmlir-translate']
+
+# Create mlir-runner wrapper with HSA simulator LD_PRELOAD
+# This is needed because LD_PRELOAD must be set BEFORE the process starts
+_simulator_lib = "/workspaces/jitcu_docker/_builds/Debug/lib/libhsakmtmodel.so"
+_simulator_topology = "/workspaces/jitcu_docker/topology"
+if os.path.exists(_simulator_lib):
+    _mlir_runner_path = os.path.join(config.llvm_tools_dir, 'mlir-runner')
+    _mlir_runner_with_sim = (
+        f'env LD_PRELOAD={_simulator_lib} '
+        f'HSA_MODEL_LIB={_simulator_lib} '
+        f'HSA_MODEL_TOPOLOGY={_simulator_topology} '
+        f'HSA_ENABLE_SDMA=0 HSA_ENABLE_INTERRUPT=0 '
+        f'{_mlir_runner_path}'
+    )
+    # Add substitution for mlir-runner - use ToolSubst for proper word boundary matching
+    tools.append(ToolSubst('mlir-runner', _mlir_runner_with_sim, unresolved='ignore'))
 
 # The following tools are optional
 tools.extend([
