@@ -231,16 +231,32 @@ FailureOr<WmmaInsn> WmmaInsn::select(mlir::Type elementTypeA,
 
       auto it = gfx1250Map.find({typeId, k});
       if (it != gfx1250Map.end()) {
-        insnInfo = &it->second;
-        selectedKDim = k;
-        LLVM_DEBUG(llvm::dbgs() << "Selected gfx1250 instruction: "
-                                << insnInfo->insn << "\n");
+        const WmmaInsnInfo *info = &it->second;
+        // Validate that kPackPerBlock * kPack is coherent with both
+        // inputVectorLen AND kDim. The WMMA instruction requires the K
+        // dimension to be processed in chunks of kDim, so we must ensure
+        // kPackPerBlock * kPack is a multiple of kDim.
+        int64_t kPerBlockTotal = kPackPerBlock * kPack;
+        if (isKCoherent(info->inputVectorLen, kPack, kPackPerBlock) &&
+            (kPerBlockTotal % k == 0)) {
+          insnInfo = info;
+          selectedKDim = k;
+          LLVM_DEBUG(llvm::dbgs() << "Selected gfx1250 instruction: "
+                                  << insnInfo->insn << "\n");
+        } else {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "gfx1250 WMMA instruction not coherent: "
+                     << "kPackPerBlock=" << kPackPerBlock << " kPack=" << kPack
+                     << " kDim=" << k << "\n");
+        }
       }
     }
   }
 
   // Use gfx12 only if we don't have a selected instruction and not gfx11
-  if (!insnInfo && !isGfx11) {
+  // and not gfx1250 (gfx1250 should not fall back to gfx12 instructions
+  // as they have different K dimension requirements)
+  if (!insnInfo && !isGfx11 && !isGfx1250) {
     auto &gfx12Map = getWmmaInsnMapGfx12();
     auto it = gfx12Map.find({typeId, 16});
     if (it != gfx12Map.end()) {
