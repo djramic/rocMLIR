@@ -10,7 +10,7 @@
 // VECTORIZATION-NEXT: qVectorLen: 8
 // VECTORIZATION: kVectorDim: GemmDimension::K
 // VECTORIZATION-NEXT: kVectorLen: 8
-// VECTORIZATION: vVectorDim: GemmDimension::MorN
+// VECTORIZATION: vVectorDim: GemmDimension::K
 // VECTORIZATION-NEXT: vVectorLen: 1
 
 module {
