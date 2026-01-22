@@ -419,12 +419,12 @@ func.func @rock_gemm_xdlops_fp8_bf8_ocp(%a : memref<1x72x128xf8E4M3FN>, %b : mem
 }
 
 // CHECK-LABEL: func.func @rock_attention_default
-// CHECK-SAME: block_size = 32
+// CHECK-SAME: block_size = 128
 // GRID-LABEL: func.func @rock_attention_default
-// GRID-SAME: grid_size = 12
+// GRID-SAME: grid_size = 3
 func.func @rock_attention_default(%arg0: memref<1x384x64xf16>, %arg1: memref<1x384x64xf16>, %arg2: memref<1x384x64xf16>, %arg3: memref<1x384x64xf16>) attributes {kernel, mhal.arch = "amdgcn-amd-amdhsa:gfx1100"} {
   // CHECK: rock.attention
-  // CHECK: #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll  = true>
+  // CHECK: #rock.wmma_gemm_params<kpackPerBlock = 8, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
   rock.attention{
    qk = %arg0 * tr %arg1 : memref<1x384x64xf16>, memref<1x384x64xf16>
    %arg3 = softmax(qk) * %arg2 : memref<1x384x64xf16> -> memref<1x384x64xf16>
@@ -479,12 +479,12 @@ func.func @rock_attention_mperblockg1_mfma(%arg0: memref<1x384x64xf16>, %arg1: m
 }
 
 // CHECK-LABEL: func.func @rock_gemm_gemm_default
-// CHECK-SAME: block_size = 32
+// CHECK-SAME: block_size = 128
 // GRID-LABEL: func.func @rock_gemm_gemm_default
-// GRID-SAME: grid_size = 12
+// GRID-SAME: grid_size = 3
 func.func @rock_gemm_gemm_default(%arg0: memref<1x384x64xf16>, %arg1: memref<1x384x64xf16>, %arg2: memref<1x384x64xf16>, %arg3: memref<1x384x64xf16>) attributes {kernel, mhal.arch = "amdgcn-amd-amdhsa:gfx1100"} {
   // CHECK: rock.gemm_elementwise_gemm
-  // CHECK: #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll  = true>
+  // CHECK: #rock.wmma_gemm_params<kpackPerBlock = 8, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
   rock.gemm_elementwise_gemm{
    ab = %arg0 * tr %arg1 : memref<1x384x64xf16>, memref<1x384x64xf16>
    %arg3 = ab * %arg2 : memref<1x384x64xf16> -> memref<1x384x64xf16>
@@ -555,12 +555,12 @@ func.func @rock_gemm_gemm_mperblockg1_mfma(%arg0: memref<1x384x64xf32>, %arg1: m
 }
 
 // CHECK-LABEL: func.func @rock_conv_gemm_default
-// CHECK-SAME: block_size = 32
+// CHECK-SAME: block_size = 128
 // GRID-LABEL: func.func @rock_conv_gemm_default
-// GRID-SAME: grid_size = 64
+// GRID-SAME: grid_size = 16
 func.func @rock_conv_gemm_default(%arg0: memref<1x128x256x1x1xf16>, %arg1: memref<2x1x256x32x32xf16>, %arg2: memref<1x128x64xf16>, %arg3: memref<1x2048x64xf16>) attributes {kernel, mhal.arch = "amdgcn-amd-amdhsa:gfx1100"} {
   // CHECK: rock.conv_elementwise_gemm
-  // CHECK: #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll  = true>
+  // CHECK: #rock.wmma_gemm_params<kpackPerBlock = 8, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
   rock.conv_elementwise_gemm{
    ab = conv(%arg0, %arg1) : memref<1x128x256x1x1xf16>, memref<2x1x256x32x32xf16>
    %arg3 = ab * %arg2 : memref<1x128x64xf16> -> memref<1x2048x64xf16>
@@ -649,10 +649,10 @@ func.func @rock_conv_tuning(%arg0: memref<1x1x1x3x3xf32>, %arg1: memref<64x1x1x1
 // GRID-LABEL: @rock_attn_schedulev2
 func.func @rock_attn_schedulev2(%arg0: memref<1x384x64xf16>, %arg1: memref<1x384x64xf16>, %arg2: memref<1x384x64xf16>, %arg3: memref<1x384x64xf16>) attributes {schedule_version =  #rock.schedule_version<2>, arch = "amdgcn-amd-amdhsa:gfx1100"} {
   // CHECK: rock.attention
-  // CHECK: params0 = #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 2, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
-  // CHECK-SAME: params1 = #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 2, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
+  // CHECK: params0 = #rock.wmma_gemm_params<kpackPerBlock = 8, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 2, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
+  // CHECK-SAME: params1 = #rock.wmma_gemm_params<kpackPerBlock = 4, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 2, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
   // GRID: rock.gridwise_attention_accel
-  // GRID: gridSize = 12
+  // GRID: gridSize = 3
   rock.attention{
    qk = %arg0 * tr %arg1 : memref<1x384x64xf16>, memref<1x384x64xf16>
    %arg3 = softmax(qk) * %arg2 : memref<1x384x64xf16> -> memref<1x384x64xf16>
@@ -739,10 +739,10 @@ func.func @rock_attn_perfconfig_schedulev4(%arg0: memref<1x384x64xf16>, %arg1: m
 // GRID-LABEL: @rock_attn_schedule_default
 func.func @rock_attn_schedule_default(%arg0: memref<1x384x64xf16>, %arg1: memref<1x384x64xf16>, %arg2: memref<1x384x64xf16>, %arg3: memref<1x384x64xf16>) attributes {arch = "amdgcn-amd-amdhsa:gfx1100"} {
   // CHECK: rock.attention
-  // CHECK: params0 = #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll  = true>
-  // CHECK-SAME: params1 = #rock.wmma_gemm_params<kpackPerBlock = 32, mPerBlock = 32, nPerBlock = 32, kpack = 1, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll  = true>
+  // CHECK: params0 = #rock.wmma_gemm_params<kpackPerBlock = 8, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
+  // CHECK-SAME: params1 = #rock.wmma_gemm_params<kpackPerBlock = 4, mPerBlock = 32, nPerBlock = 128, kpack = 8, mPerWave = 32, nPerWave = 32, mnPerXdl = 16, splitKFactor = 1, scheduleVersion = 1, outputSwizzle = 2, wavesPerEU = 0, gridGroupSize = 0, forceUnroll = true>
   // GRID: rock.gridwise_attention_accel
-  // GRID: gridSize = 12
+  // GRID: gridSize = 3
   rock.attention{
    qk = %arg0 * tr %arg1 : memref<1x384x64xf16>, memref<1x384x64xf16>
    %arg3 = softmax(qk) * %arg2 : memref<1x384x64xf16> -> memref<1x384x64xf16>

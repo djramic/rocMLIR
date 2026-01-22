@@ -92,6 +92,12 @@ if config.rocm_path:
     except subprocess.CalledProcessError:
         config.no_AMD_GPU = True
 
+# Add mfma/wmma features to available_features for REQUIRES directives
+if config.arch_support_mfma:
+    config.available_features.add('mfma')
+if config.arch_support_wmma:
+    config.available_features.add('wmma')
+
 import lit.llvm
 lit.llvm.initialize(lit_config, config)
 

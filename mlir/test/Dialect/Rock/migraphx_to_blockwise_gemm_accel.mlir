@@ -1,4 +1,4 @@
-// REQUIRES: mfma
+// REQUIRES: mfma || wmma
 // RUN: sed s/##TOKEN_ARCH##/%arch/g %s | rocmlir-driver -kernel-pipeline migraphx,highlevel -targets %arch |  rocmlir-driver -arch %arch -c --mlir-print-ir-after=rock-blockwise-load-tile-to-threadwise -o /dev/null 2>&1 | FileCheck %s
 
 module {
