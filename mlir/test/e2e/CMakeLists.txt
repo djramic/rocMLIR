@@ -17,6 +17,12 @@ set(CONFIG_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LOCAL_CONFIG_FILE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lit.local.cfg)
 set(LOCAL_CONFIG_FILE_BIN ${CMAKE_CURRENT_BINARY_DIR}/lit.local.cfg)
 
+# Track GPU architecture changes to trigger test regeneration
+# This ensures tests are regenerated when HIP_VISIBLE_DEVICES changes
+set(GPU_ARCH_MARKER_FILE ${E2E_DIR}/gpu_arch_marker.txt)
+set(CHECK_GPU_ARCH_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/check_gpu_arch.py")
+set(COMMON_UTILS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../common_utils")
+
 # Create a list for configs
 # GEN_MODE is used by E2E_GEN_SCRIPT to determine the test generation format.
 # By default, each generated file contains all combinations of one config in
@@ -111,6 +117,13 @@ list(TRANSFORM CONFIG_DUMMY_FILES APPEND .copy)
 # Add common tests utils
 get_filename_component(PARENT_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR} DIRECTORY)
 
+# Create a target to check GPU architecture and update marker file if changed
+# This triggers test regeneration when HIP_VISIBLE_DEVICES changes to a different GPU
+add_custom_target(check-gpu-arch
+  COMMAND ${Python3_EXECUTABLE} ${CHECK_GPU_ARCH_SCRIPT} ${GPU_ARCH_MARKER_FILE} ${E2E_DIR} ${COMMON_UTILS_PATH}
+  COMMENT "Checking GPU architecture for E2E test generation"
+)
+
 # Add a command to copy lit.local.cfg
 add_custom_command(OUTPUT ${LOCAL_CONFIG_FILE_BIN}
   COMMAND ${CMAKE_COMMAND} -E copy ${LOCAL_CONFIG_FILE_SRC} ${LOCAL_CONFIG_FILE_BIN}
@@ -136,9 +149,10 @@ endforeach()
 
 # Add a target to trigger E2E tests generation conditionally
 #   1. any of the *.toml files are changed OR
-#   2. ${LOCAL_CONFIG_FILE_BIN} is missing
+#   2. ${LOCAL_CONFIG_FILE_BIN} is missing OR
+#   3. GPU architecture changed (check-gpu-arch removes .copy files)
 add_custom_target(e2e_tests
-  DEPENDS ${LOCAL_CONFIG_FILE_BIN} ${CONFIG_DUMMY_FILES}
+  DEPENDS ${LOCAL_CONFIG_FILE_BIN} ${CONFIG_DUMMY_FILES} check-gpu-arch
 )
 
 # Add a target to trigger E2E tests generation unconditionally

@@ -57,25 +57,28 @@ config.arch_support_wmma = False
 config.multi_gpu_detected = False
 if config.rocm_path:
     try:
-        # Check if user already set HIP_VISIBLE_DEVICES - respect their choice
+        # Check if user already set ROCR_VISIBLE_DEVICES or HIP_VISIBLE_DEVICES - respect their choice
+        user_rocr_visible = os.environ.get('ROCR_VISIBLE_DEVICES')
         user_hip_visible = os.environ.get('HIP_VISIBLE_DEVICES')
+        user_device_override = user_rocr_visible or user_hip_visible
         
         agents = get_agents()
         default_agent = get_default_agent()
         if default_agent:
             if len(agents) > 1:
                 config.multi_gpu_detected = True
-                if user_hip_visible is not None:
+                if user_device_override is not None:
                     # User specified which GPU to use - respect it
+                    env_name = 'ROCR_VISIBLE_DEVICES' if user_rocr_visible else 'HIP_VISIBLE_DEVICES'
                     lit_config.note("Multiple GPU architectures detected: %s. "
-                                    "Using user-specified HIP_VISIBLE_DEVICES=%s. "
+                                    "Using user-specified %s=%s. "
                                     "Device 0 (after filtering) architecture: '%s'."
-                                    % (', '.join(sorted(agents)), user_hip_visible, default_agent))
+                                    % (', '.join(sorted(agents)), env_name, user_device_override, default_agent))
                 else:
-                    # No user preference - use device 0 and set HIP_VISIBLE_DEVICES
+                    # No user preference - use device 0 and set ROCR_VISIBLE_DEVICES
                     lit_config.note("Multiple GPU architectures detected: %s. "
                                     "Using device 0 architecture '%s' for E2E tests. "
-                                    "HIP_VISIBLE_DEVICES will be set to '0' to ensure binary compatibility."
+                                    "ROCR_VISIBLE_DEVICES will be set to '0' to ensure binary compatibility."
                                     % (', '.join(sorted(agents)), default_agent))
             config.arch = default_agent
             # Check features for the device we'll actually use
