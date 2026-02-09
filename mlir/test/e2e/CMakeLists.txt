@@ -18,10 +18,41 @@ set(LOCAL_CONFIG_FILE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lit.local.cfg)
 set(LOCAL_CONFIG_FILE_BIN ${CMAKE_CURRENT_BINARY_DIR}/lit.local.cfg)
 
 # Track GPU architecture changes to trigger test regeneration
-# This ensures tests are regenerated when HIP_VISIBLE_DEVICES changes
-set(GPU_ARCH_MARKER_FILE ${E2E_DIR}/gpu_arch_marker.txt)
-set(CHECK_GPU_ARCH_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/check_gpu_arch.py")
+# Detect current GPU architecture using Python/HIP
 set(COMMON_UTILS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../common_utils")
+execute_process(
+  COMMAND ${Python3_EXECUTABLE} -c "
+import sys
+sys.path.insert(0, '${COMMON_UTILS_PATH}')
+try:
+    from common import get_default_agent
+    arch = get_default_agent() or 'unknown'
+except:
+    arch = 'unknown'
+print(arch, end='')
+"
+  OUTPUT_VARIABLE ROCMLIR_CURRENT_GPU_ARCH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+
+# Check if GPU architecture changed from cached value
+if(NOT DEFINED CACHE{ROCMLIR_CACHED_GPU_ARCH})
+  set(ROCMLIR_CACHED_GPU_ARCH "${ROCMLIR_CURRENT_GPU_ARCH}" CACHE INTERNAL "Cached GPU architecture for E2E tests")
+  message(STATUS "E2E tests: Initial GPU architecture detected: ${ROCMLIR_CURRENT_GPU_ARCH}")
+elseif(NOT "${ROCMLIR_CACHED_GPU_ARCH}" STREQUAL "${ROCMLIR_CURRENT_GPU_ARCH}")
+  message(STATUS "E2E tests: GPU architecture changed: ${ROCMLIR_CACHED_GPU_ARCH} -> ${ROCMLIR_CURRENT_GPU_ARCH}. Triggering test regeneration.")
+  # Remove .copy files to force regeneration
+  file(GLOB COPY_FILES "${E2E_DIR}/*.copy")
+  foreach(COPY_FILE ${COPY_FILES})
+    file(REMOVE ${COPY_FILE})
+    message(STATUS "Removed ${COPY_FILE}")
+  endforeach()
+  # Update cached value
+  set(ROCMLIR_CACHED_GPU_ARCH "${ROCMLIR_CURRENT_GPU_ARCH}" CACHE INTERNAL "Cached GPU architecture for E2E tests" FORCE)
+else()
+  message(STATUS "E2E tests: GPU architecture unchanged: ${ROCMLIR_CURRENT_GPU_ARCH}")
+endif()
 
 # Create a list for configs
 # GEN_MODE is used by E2E_GEN_SCRIPT to determine the test generation format.
@@ -117,12 +148,8 @@ list(TRANSFORM CONFIG_DUMMY_FILES APPEND .copy)
 # Add common tests utils
 get_filename_component(PARENT_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR} DIRECTORY)
 
-# Create a target to check GPU architecture and update marker file if changed
-# This triggers test regeneration when HIP_VISIBLE_DEVICES changes to a different GPU
-add_custom_target(check-gpu-arch
-  COMMAND ${Python3_EXECUTABLE} ${CHECK_GPU_ARCH_SCRIPT} ${GPU_ARCH_MARKER_FILE} ${E2E_DIR} ${COMMON_UTILS_PATH}
-  COMMENT "Checking GPU architecture for E2E test generation"
-)
+# GPU architecture check is now done at CMake configure time (see above)
+# No need for a separate target - CMake will detect changes and remove .copy files
 
 # Add a command to copy lit.local.cfg
 add_custom_command(OUTPUT ${LOCAL_CONFIG_FILE_BIN}
@@ -150,9 +177,9 @@ endforeach()
 # Add a target to trigger E2E tests generation conditionally
 #   1. any of the *.toml files are changed OR
 #   2. ${LOCAL_CONFIG_FILE_BIN} is missing OR
-#   3. GPU architecture changed (check-gpu-arch removes .copy files)
+#   3. GPU architecture changed (CMake configure removes .copy files)
 add_custom_target(e2e_tests
-  DEPENDS ${LOCAL_CONFIG_FILE_BIN} ${CONFIG_DUMMY_FILES} check-gpu-arch
+  DEPENDS ${LOCAL_CONFIG_FILE_BIN} ${CONFIG_DUMMY_FILES}
 )
 
 # Add a target to trigger E2E tests generation unconditionally
